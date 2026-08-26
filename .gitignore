@@ -1,0 +1,35 @@
+# Build .NET
+**/bin/
+**/obj/
+TestResults/
+coverage/
+*.trx
+
+# Configuration locale et secrets
+.env
+.env.*
+!.env.example
+.env.worker.local
+**/appsettings.Local.json
+**/appsettings.*.local.json
+
+# Outils et IDE
+.codex/
+.dotnet/
+.tools/
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+
+# Systèmes d'exploitation
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Journaux et fichiers temporaires
+*.log
+*.tmp
+*.temp
