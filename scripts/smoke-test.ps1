@@ -90,13 +90,13 @@ try {
 
     $baseUrl = (Read-WorkerSetting -Path $WorkerEnvFile -Name 'WordPress__BaseUrl').TrimEnd('/')
 
-    Write-Host '[1/8] Vérification de WordPress…'
+    Write-Host '[1/8] Vérification de WordPress...'
     $wordpressResponse = Invoke-WebRequest -UseBasicParsing -Method Get -Uri $baseUrl -TimeoutSec 30
     if ([int]$wordpressResponse.StatusCode -lt 200 -or [int]$wordpressResponse.StatusCode -ge 400) {
         throw "WordPress a répondu avec le code $($wordpressResponse.StatusCode)."
     }
 
-    Write-Host '[2/8] Vérification du refus d’un POST anonyme…'
+    Write-Host "[2/8] Vérification du refus d'un POST anonyme..."
     $anonymousStatusCode = $null
     try {
         $anonymousResponse = Invoke-WebRequest `
@@ -118,18 +118,18 @@ try {
         throw "Le POST anonyme a répondu avec le code $anonymousStatusCode au lieu de 401 ou 403."
     }
 
-    Write-Host '[3/8] Première synchronisation des 60 produits…'
+    Write-Host '[3/8] Première synchronisation des 60 produits...'
     Invoke-WorkerOnce -ConfigurationFile $WorkerEnvFile
 
-    Write-Host '[4/8] Vérification de la page 1…'
+    Write-Host '[4/8] Vérification de la page 1...'
     $page1 = Get-CatalogPage -BaseUrl $baseUrl -Page 1
     Assert-CatalogPage -Response $page1 -ExpectedPage 1 -ExpectedItemCount 24
 
-    Write-Host '[5/8] Vérification de la page 2…'
+    Write-Host '[5/8] Vérification de la page 2...'
     $page2 = Get-CatalogPage -BaseUrl $baseUrl -Page 2
     Assert-CatalogPage -Response $page2 -ExpectedPage 2 -ExpectedItemCount 24
 
-    Write-Host '[6/8] Vérification de la page 3…'
+    Write-Host '[6/8] Vérification de la page 3...'
     $page3 = Get-CatalogPage -BaseUrl $baseUrl -Page 3
     Assert-CatalogPage -Response $page3 -ExpectedPage 3 -ExpectedItemCount 12
 
@@ -140,10 +140,10 @@ try {
         throw "Les trois pages ne contiennent que $(@($allSourceIds).Count) identifiants source distincts."
     }
 
-    Write-Host '[7/8] Deuxième synchronisation pour contrôler l’idempotence…'
+    Write-Host "[7/8] Deuxième synchronisation pour contrôler l'idempotence..."
     Invoke-WorkerOnce -ConfigurationFile $WorkerEnvFile
 
-    Write-Host '[8/8] Vérification du total après la seconde synchronisation…'
+    Write-Host '[8/8] Vérification du total après la seconde synchronisation...'
     $pageAfterSecondRun = Get-CatalogPage -BaseUrl $baseUrl -Page 1
     Assert-CatalogPage -Response $pageAfterSecondRun -ExpectedPage 1 -ExpectedItemCount 24
 

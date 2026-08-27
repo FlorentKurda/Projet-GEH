@@ -55,6 +55,7 @@ services:
 
   wpcli:
     image: wordpress:cli-2.11.0-php8.3
+    entrypoint: ["wp"]
     depends_on:
       db:
         condition: service_healthy

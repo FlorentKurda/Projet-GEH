@@ -39,6 +39,14 @@ La route privée exige une authentification WordPress valide et cette capacité.
 - SDK .NET 10 pour construire, tester et exécuter le Worker ;
 - le port local `8080` disponible, ou un autre port configuré de façon cohérente dans `.env`.
 
+Installez le SDK .NET 10 depuis la [page officielle .NET](https://dotnet.microsoft.com/download/dotnet/10.0), puis vérifiez sa présence :
+
+```powershell
+dotnet --list-sdks
+```
+
+La liste doit contenir au moins une version `10.0.x`.
+
 PHP et MariaDB n’ont pas besoin d’être installés sur l’hôte : Docker fournit WordPress, MariaDB et WP-CLI. Un binaire PHP local reste utile, mais facultatif, pour lancer directement `php -l`.
 
 `run-worker-local.ps1` préfère une installation locale dans `.dotnet/dotnet.exe` à la racine du dépôt, puis utilise `dotnet` dans `PATH`. Dans les deux cas, il vérifie qu’un SDK .NET 10 est disponible. Le répertoire `.dotnet` est ignoré par Git.
@@ -87,6 +95,10 @@ Si `.env` est absent, le script le crée automatiquement depuis `.env.example`. 
 7. écrit `.env.worker.local` sans afficher le secret.
 
 Le script est conçu pour être relancé. Tant que `.env.worker.local` et l’Application Password correspondante existent, il conserve le secret déjà créé.
+
+Le service Compose `wpcli` fixe explicitement son entrypoint à `wp`. Cette correction évite que `docker compose run ... wpcli core ...` tente d’exécuter directement une commande nommée `core`. Elle n’a pas été validée sur une installation WordPress vierge afin de préserver les volumes locaux fonctionnels.
+
+Si le bootstrap s’interrompt néanmoins après le démarrage des conteneurs, terminez l’installation avec l’assistant à <http://localhost:8080>, activez **Product Catalog Sync** dans l’administration, puis créez l’utilisateur technique avec le rôle `catalog_sync` et son Application Password depuis l’interface WordPress. Reportez uniquement ces valeurs dans `.env.worker.local`, qui est ignoré par Git. Ne placez aucun secret dans le README ou dans un fichier suivi.
 
 Le montage du plugin est direct : une modification PHP locale est visible dans le conteneur sans reconstruire d’image. Les volumes `wordpress_data` et `mariadb_data` conservent les données entre les redémarrages.
 
