@@ -17,11 +17,12 @@ public sealed class RunOnceApplication : IRunOnceApplication
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<int> ExecuteAsync(CancellationToken cancellationToken)
+    public async Task<int> ExecuteAsync(bool dryRun, CancellationToken cancellationToken)
     {
         try
         {
-            await _synchronizationService.SynchronizeAsync(cancellationToken);
+            var result = await _synchronizationService.SynchronizeAsync(dryRun, cancellationToken);
+            Console.Out.WriteLine(SyncResultMarker.Format(result));
             _logger.LogInformation("Exécution ponctuelle terminée avec succès.");
             return 0;
         }

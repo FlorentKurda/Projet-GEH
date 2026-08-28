@@ -74,13 +74,13 @@ public sealed class JsonProductSource : IProductSource
             throw new ProductSourceException("L'accès au fichier JSON de produits est refusé.", exception);
         }
 
-        if (deserializedProducts is null || deserializedProducts.Count == 0)
+        if (deserializedProducts is null)
         {
-            throw new ProductSourceException("Le fichier JSON doit contenir au moins un produit.");
+            throw new ProductSourceException("Le fichier JSON doit contenir un tableau de produits.");
         }
 
         var products = new List<ProductSyncItem>(deserializedProducts.Count);
-        var sourceIds = new HashSet<string>(StringComparer.Ordinal);
+        var sourceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         for (var index = 0; index < deserializedProducts.Count; index++)
         {

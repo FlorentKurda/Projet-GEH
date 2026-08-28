@@ -73,6 +73,34 @@ public sealed class JsonProductSourceTests : IDisposable
             () => source.GetProductsAsync(cancellation.Token));
     }
 
+    [Fact]
+    public async Task GetProductsAsync_AllowsEmptyArrayForServerSideGuardrail()
+    {
+        var source = CreateSource(await WriteJsonAsync("[]"));
+
+        var products = await source.GetProductsAsync(CancellationToken.None);
+
+        Assert.Empty(products);
+    }
+
+    [Fact]
+    public async Task GetProductsAsync_RejectsDuplicateSourceIdIgnoringCase()
+    {
+        var path = await WriteJsonAsync(
+            """
+            [
+              { "sourceId": "MOCK-0001", "reference": "REF-1", "name": "Produit 1" },
+              { "sourceId": "mock-0001", "reference": "REF-2", "name": "Produit 2" }
+            ]
+            """);
+        var source = CreateSource(path);
+
+        var exception = await Assert.ThrowsAsync<ProductValidationException>(
+            () => source.GetProductsAsync(CancellationToken.None));
+
+        Assert.Contains("plusieurs fois", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_temporaryDirectory))

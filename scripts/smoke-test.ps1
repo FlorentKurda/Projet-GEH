@@ -42,9 +42,42 @@ function Invoke-WorkerOnce {
         throw 'PowerShell est introuvable pour exécuter le Worker dans un sous-processus.'
     }
 
-    & $powerShellCommand.Source -NoLogo -NoProfile -ExecutionPolicy Bypass -File $runWorkerScript -RunOnce -WorkerEnvFile $ConfigurationFile
-    if ($LASTEXITCODE -ne 0) {
-        throw "Le Worker a échoué avec le code $LASTEXITCODE."
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $output = @(& $powerShellCommand.Source -NoLogo -NoProfile -ExecutionPolicy Bypass -File $runWorkerScript -RunOnce -WorkerEnvFile $ConfigurationFile 2>&1)
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+
+    foreach ($line in $output) {
+        Write-Host ([string]$line)
+    }
+
+    if ($exitCode -ne 0) {
+        throw "Le Worker a échoué avec le code $exitCode."
+    }
+
+    return ($output | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
+}
+
+function Get-WorkerResult {
+    param([Parameter(Mandatory)][string]$Output)
+
+    $prefix = 'CATALOG_SYNC_RESULT_V1 '
+    $marker = @($Output -split "`r?`n" | Where-Object { $_.StartsWith($prefix) }) |
+        Select-Object -Last 1
+    if ([string]::IsNullOrWhiteSpace($marker)) {
+        throw 'Le Worker n''a pas emis son resultat structure CATALOG_SYNC_RESULT_V1.'
+    }
+
+    try {
+        return $marker.Substring($prefix.Length) | ConvertFrom-Json
+    }
+    catch {
+        throw "Le resultat structure du Worker est invalide : $($_.Exception.Message)"
     }
 }
 
@@ -102,7 +135,7 @@ try {
         $anonymousResponse = Invoke-WebRequest `
             -UseBasicParsing `
             -Method Post `
-            -Uri "$baseUrl/wp-json/catalog-sync/v1/products" `
+            -Uri "$baseUrl/wp-json/catalog-sync/v1/runs" `
             -ContentType 'application/json' `
             -Body '{}' `
             -TimeoutSec 30
@@ -119,7 +152,10 @@ try {
     }
 
     Write-Host '[3/8] Première synchronisation des 60 produits...'
-    Invoke-WorkerOnce -ConfigurationFile $WorkerEnvFile
+    $firstResult = Get-WorkerResult -Output (Invoke-WorkerOnce -ConfigurationFile $WorkerEnvFile)
+    if ([int]$firstResult.received -ne 60 -or [bool]$firstResult.dryRun) {
+        throw 'La premiere synchronisation ne confirme pas 60 produits recus.'
+    }
 
     Write-Host '[4/8] Vérification de la page 1...'
     $page1 = Get-CatalogPage -BaseUrl $baseUrl -Page 1
@@ -141,7 +177,15 @@ try {
     }
 
     Write-Host "[7/8] Deuxième synchronisation pour contrôler l'idempotence..."
-    Invoke-WorkerOnce -ConfigurationFile $WorkerEnvFile
+    $secondResult = Get-WorkerResult -Output (Invoke-WorkerOnce -ConfigurationFile $WorkerEnvFile)
+    if ([int]$secondResult.received -ne 60 -or
+        [int]$secondResult.inserted -ne 0 -or
+        [int]$secondResult.updated -ne 0 -or
+        [int]$secondResult.unchanged -ne 60 -or
+        [int]$secondResult.reactivated -ne 0 -or
+        [int]$secondResult.deactivated -ne 0) {
+        throw 'La seconde synchronisation ne correspond pas au delta attendu.'
+    }
 
     Write-Host '[8/8] Vérification du total après la seconde synchronisation...'
     $pageAfterSecondRun = Get-CatalogPage -BaseUrl $baseUrl -Page 1

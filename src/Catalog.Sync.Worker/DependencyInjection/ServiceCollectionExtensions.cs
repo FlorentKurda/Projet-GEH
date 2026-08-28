@@ -23,6 +23,9 @@ public static class ServiceCollectionExtensions
             .Validate(
                 options => options.IntervalMinutes is >= 1 and <= 1_440,
                 "Sync:IntervalMinutes doit être compris entre 1 et 1440.")
+            .Validate(
+                options => options.BatchSize is >= 1 and <= 500,
+                "Sync:BatchSize doit être compris entre 1 et 500.")
             .ValidateOnStart();
 
         services
@@ -53,6 +56,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IProductSyncItemValidator, ProductSyncItemValidator>();
         services.AddSingleton<IProductSource, JsonProductSource>();
         services.AddSingleton<IWordPressCatalogClient, WordPressCatalogClient>();
+        services.AddSingleton<IRetryDelay, RetryDelay>();
         services.AddSingleton<ICatalogSynchronizationService, CatalogSynchronizationService>();
         services.AddSingleton<IRunOnceApplication, RunOnceApplication>();
         services.AddSingleton(TimeProvider.System);

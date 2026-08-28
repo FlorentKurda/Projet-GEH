@@ -1,6 +1,8 @@
 ﻿[CmdletBinding()]
 param(
     [switch]$RunOnce,
+    [switch]$DryRun,
+    [string]$ProductFile,
     [string]$WorkerEnvFile
 )
 
@@ -69,12 +71,30 @@ try {
 
     $env:DOTNET_ENVIRONMENT = 'Development'
 
+    if ($DryRun -and -not $RunOnce) {
+        throw 'Le paramètre -DryRun doit être utilisé avec -RunOnce.'
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ProductFile)) {
+        if (-not [System.IO.Path]::IsPathRooted($ProductFile)) {
+            $ProductFile = Join-Path $projectRoot $ProductFile
+        }
+        $ProductFile = [System.IO.Path]::GetFullPath($ProductFile)
+        if (-not (Test-Path -LiteralPath $ProductFile -PathType Leaf)) {
+            throw "La fixture de produits est introuvable : '$ProductFile'."
+        }
+        $env:ProductSource__JsonFilePath = $ProductFile
+    }
+
+    $workerArguments = @()
     if ($RunOnce) {
-        & $dotnetExecutable run --project $projectFile -- --run-once
+        $workerArguments += '--run-once'
     }
-    else {
-        & $dotnetExecutable run --project $projectFile
+    if ($DryRun) {
+        $workerArguments += '--dry-run'
     }
+
+    & $dotnetExecutable run --project $projectFile -- @workerArguments
 
     $workerExitCode = $LASTEXITCODE
     if ($workerExitCode -ne 0) {

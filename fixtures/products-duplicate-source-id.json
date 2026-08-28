@@ -1,0 +1,4 @@
+[
+  {"sourceId":"MOCK-0001","reference":"REF-0001","name":"Clé mixte 8 mm","shortDescription":"Clé en acier pour les opérations courantes d’atelier.","familyCode":"FAM-OUT","familyLabel":"Outillage à main","brand":"AtelierPro","sourceUpdatedAtUtc":"2026-08-01T08:00:00Z"},
+  {"sourceId":"MOCK-0001","reference":"REF-DUPLICATE","name":"Doublon volontaire pour test","shortDescription":"Clé en acier pour les opérations courantes d’atelier.","familyCode":"FAM-OUT","familyLabel":"Outillage à main","brand":"AtelierPro","sourceUpdatedAtUtc":"2026-08-01T08:00:00Z"}
+]

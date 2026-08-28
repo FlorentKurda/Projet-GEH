@@ -14,11 +14,12 @@ public sealed class RunOnceApplicationTests
         var application = CreateApplication(synchronizationService);
 
         var exitCode = await application
-            .ExecuteAsync(CancellationToken.None)
+            .ExecuteAsync(dryRun: false, CancellationToken.None)
             .WaitAsync(TimeSpan.FromSeconds(1));
 
         Assert.Equal(0, exitCode);
         Assert.Equal(1, synchronizationService.CallCount);
+        Assert.False(synchronizationService.LastDryRun);
     }
 
     [Fact]
@@ -31,11 +32,12 @@ public sealed class RunOnceApplicationTests
         var application = CreateApplication(synchronizationService);
 
         var exitCode = await application
-            .ExecuteAsync(CancellationToken.None)
+            .ExecuteAsync(dryRun: true, CancellationToken.None)
             .WaitAsync(TimeSpan.FromSeconds(1));
 
         Assert.Equal(1, exitCode);
         Assert.Equal(1, synchronizationService.CallCount);
+        Assert.True(synchronizationService.LastDryRun);
     }
 
     private static RunOnceApplication CreateApplication(
@@ -50,11 +52,16 @@ public sealed class RunOnceApplicationTests
     {
         public int CallCount { get; private set; }
 
+        public bool LastDryRun { get; private set; }
+
         public Exception? Exception { get; init; }
 
-        public Task<SyncResult> SynchronizeAsync(CancellationToken cancellationToken)
+        public Task<SyncResult> SynchronizeAsync(
+            bool dryRun,
+            CancellationToken cancellationToken)
         {
             CallCount++;
+            LastDryRun = dryRun;
             cancellationToken.ThrowIfCancellationRequested();
 
             if (Exception is not null)
@@ -65,10 +72,18 @@ public sealed class RunOnceApplicationTests
             return Task.FromResult(new SyncResult
             {
                 RunId = Guid.Parse("71c7ea7a-55c4-4fc0-a721-6ac4cd8e3280"),
-                Status = "success",
+                Status = "completed",
                 ReceivedCount = 60,
                 InsertedCount = 60,
                 UpdatedCount = 0,
+                UnchangedCount = 0,
+                ReactivatedCount = 0,
+                DeactivatedCount = 0,
+                CandidateDeactivationCount = 0,
+                ActiveBeforeCount = 0,
+                DeactivationPercentage = 0,
+                GuardrailStatus = "ok",
+                DryRun = dryRun,
             });
         }
     }

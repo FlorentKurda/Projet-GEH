@@ -9,6 +9,7 @@ namespace Catalog.Sync.Worker;
 public static class Program
 {
     private const string RunOnceArgument = "--run-once";
+    private const string DryRunArgument = "--dry-run";
 
     public static Task<int> Main(string[] args)
     {
@@ -23,11 +24,19 @@ public static class Program
 
         var runOnce = args.Any(
             argument => string.Equals(argument, RunOnceArgument, StringComparison.OrdinalIgnoreCase));
+        var dryRun = args.Any(
+            argument => string.Equals(argument, DryRunArgument, StringComparison.OrdinalIgnoreCase));
+
+        if (dryRun && !runOnce)
+        {
+            Console.Error.WriteLine("L'option --dry-run doit être utilisée avec --run-once.");
+            return 1;
+        }
+
         var hostArguments = args
-            .Where(argument => !string.Equals(
-                argument,
-                RunOnceArgument,
-                StringComparison.OrdinalIgnoreCase))
+            .Where(argument =>
+                !string.Equals(argument, RunOnceArgument, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(argument, DryRunArgument, StringComparison.OrdinalIgnoreCase))
             .ToArray();
 
         try
@@ -42,7 +51,7 @@ public static class Program
                 await host.StartAsync(cancellationToken);
                 var exitCode = await host.Services
                     .GetRequiredService<IRunOnceApplication>()
-                    .ExecuteAsync(cancellationToken);
+                    .ExecuteAsync(dryRun, cancellationToken);
                 await host.StopAsync(CancellationToken.None);
                 return exitCode;
             }

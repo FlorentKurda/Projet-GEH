@@ -38,12 +38,25 @@ public sealed class WordPressOptionsValidatorTests
         Assert.True(result.Failed);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(6)]
+    public void Validate_RejectsRetryAttemptCountOutsideBoundedRange(int attempts)
+    {
+        var options = CreateValidOptions("https://catalog.example.test");
+        options.MaxRetryAttempts = attempts;
+
+        var result = _validator.Validate(null, options);
+
+        Assert.True(result.Failed);
+    }
+
     private static WordPressOptions CreateValidOptions(string baseUrl)
     {
         return new WordPressOptions
         {
             BaseUrl = baseUrl,
-            SyncEndpoint = "/wp-json/catalog-sync/v1/products",
+            RunsEndpoint = "/wp-json/catalog-sync/v1/runs",
             Username = "catalog_sync",
             ApplicationPassword = "test-only-password",
             RequestTimeoutSeconds = 60,

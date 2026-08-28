@@ -1,0 +1,7 @@
+[
+  {"sourceId":"MOCK-0001","reference":"REF-0001","name":"Clé mixte 8 mm","shortDescription":"Clé en acier pour les opérations courantes d’atelier.","familyCode":"FAM-OUT","familyLabel":"Outillage à main","brand":"AtelierPro","sourceUpdatedAtUtc":"2026-08-01T08:00:00Z"},
+  {"sourceId":"MOCK-0002","reference":"REF-0002","name":"Clé mixte 10 mm","shortDescription":"Format compact avec repérage de dimension gravé.","familyCode":"FAM-OUT","familyLabel":"Outillage à main","brand":"AtelierPro","sourceUpdatedAtUtc":"2026-08-01T08:05:00Z"},
+  {"sourceId":"MOCK-0003","reference":"REF-0003","name":"Jeu de tournevis isolés — série renforcée","shortDescription":"Assortiment de tournevis pour les travaux de maintenance.","familyCode":"FAM-OUT","familyLabel":"Outillage à main","brand":"Équinoxe","sourceUpdatedAtUtc":"2026-08-25T08:00:00Z"},
+  {"sourceId":"MOCK-0004","reference":"REF-0004","name":"Marteau de mécanicien","shortDescription":"Version Lot 2 avec manche antidérapant renforcé.","familyCode":"FAM-OUT","familyLabel":"Outillage à main","brand":"Novatool","sourceUpdatedAtUtc":"2026-08-25T08:05:00Z"},
+  {"sourceId":"MOCK-0005","reference":"REF-0005","name":"Pince multiprise","shortDescription":"Réglage rapide pour différentes dimensions de pièces.","familyCode":"FAM-OUT","familyLabel":"Outillage à main","brand":"Atelier Évolution","sourceUpdatedAtUtc":"2026-08-25T08:10:00Z"}
+]

@@ -19,13 +19,13 @@ public sealed class WordPressOptionsValidator : IValidateOptions<WordPressOption
             ValidateBaseUri(baseUri, options, failures);
         }
 
-        if (string.IsNullOrWhiteSpace(options.SyncEndpoint) ||
-            !options.SyncEndpoint.StartsWith("/", StringComparison.Ordinal) ||
-            options.SyncEndpoint.Contains('?') ||
-            options.SyncEndpoint.Contains('#') ||
-            options.SyncEndpoint.Contains("://", StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(options.RunsEndpoint) ||
+            !options.RunsEndpoint.StartsWith("/", StringComparison.Ordinal) ||
+            options.RunsEndpoint.Contains('?') ||
+            options.RunsEndpoint.Contains('#') ||
+            options.RunsEndpoint.Contains("://", StringComparison.Ordinal))
         {
-            failures.Add("WordPress:SyncEndpoint doit être un chemin relatif commençant par '/'.");
+            failures.Add("WordPress:RunsEndpoint doit être un chemin relatif commençant par '/'.");
         }
 
         if (string.IsNullOrWhiteSpace(options.Username))
@@ -41,6 +41,17 @@ public sealed class WordPressOptionsValidator : IValidateOptions<WordPressOption
         if (options.RequestTimeoutSeconds is < 1 or > 300)
         {
             failures.Add("WordPress:RequestTimeoutSeconds doit être compris entre 1 et 300.");
+        }
+
+        if (options.MaxRetryAttempts is < 1 or > 5)
+        {
+            failures.Add("WordPress:MaxRetryAttempts doit être compris entre 1 et 5.");
+        }
+
+        if (options.RetryBaseDelayMilliseconds is < 1 or > 10_000)
+        {
+            failures.Add(
+                "WordPress:RetryBaseDelayMilliseconds doit être compris entre 1 et 10000.");
         }
 
         return failures.Count == 0

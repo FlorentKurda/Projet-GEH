@@ -269,13 +269,14 @@ try {
         '# Généré par scripts/bootstrap-local.ps1. Ne pas commiter.',
         "DOTNET_ENVIRONMENT=Development",
         "WordPress__BaseUrl=$siteUrl",
-        'WordPress__SyncEndpoint=/wp-json/catalog-sync/v1/products',
+        'WordPress__RunsEndpoint=/wp-json/catalog-sync/v1/runs',
         "WordPress__Username=$syncUser",
         "WordPress__ApplicationPassword=$applicationPassword",
         'WordPress__RequestTimeoutSeconds=60',
         'WordPress__AllowInsecureHttpForLocalDevelopment=true',
         "ProductSource__JsonFilePath=$fixturePath",
-        'Sync__IntervalMinutes=15'
+        'Sync__IntervalMinutes=15',
+        'Sync__BatchSize=200'
     )
     $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllLines($WorkerEnvFile, $workerConfigLines, $utf8WithoutBom)

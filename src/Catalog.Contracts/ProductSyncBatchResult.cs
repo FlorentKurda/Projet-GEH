@@ -1,10 +1,14 @@
 namespace Catalog.Contracts;
 
-public sealed record SyncResult
+public sealed record ProductSyncBatchResult
 {
     public required Guid RunId { get; init; }
 
+    public required int BatchNumber { get; init; }
+
     public required string Status { get; init; }
+
+    public required bool Replayed { get; init; }
 
     public required int ReceivedCount { get; init; }
 
@@ -15,16 +19,4 @@ public sealed record SyncResult
     public required int UnchangedCount { get; init; }
 
     public required int ReactivatedCount { get; init; }
-
-    public required int DeactivatedCount { get; init; }
-
-    public required int CandidateDeactivationCount { get; init; }
-
-    public required int ActiveBeforeCount { get; init; }
-
-    public required decimal DeactivationPercentage { get; init; }
-
-    public required string GuardrailStatus { get; init; }
-
-    public required bool DryRun { get; init; }
 }

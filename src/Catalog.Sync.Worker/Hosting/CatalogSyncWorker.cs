@@ -33,7 +33,9 @@ public sealed class CatalogSyncWorker : BackgroundService
         {
             try
             {
-                await _synchronizationService.SynchronizeAsync(stoppingToken);
+                await _synchronizationService.SynchronizeAsync(
+                    dryRun: false,
+                    stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

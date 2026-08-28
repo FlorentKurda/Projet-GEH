@@ -1,156 +1,267 @@
-# Product Catalog Sync — Lot 1
+# Product Catalog Sync — Lot 2
 
-Ce dépôt implémente une première chaîne fonctionnelle de synchronisation de produits fictifs vers WordPress. Le but du Lot 1 est de valider le contrat produit, l’envoi authentifié, l’upsert dans des tables dédiées et la lecture publique paginée, sans connexion à Sage et sans frontend.
+Ce dépôt implémente un miroir public WordPress alimenté par un Worker .NET 10. Le Lot 2 fiabilise le Lot 1 avec un cycle explicite `start → batches → complete`, la détection des produits inchangés, la désactivation contrôlée des absents, un dry-run et des protections contre les erreurs réseau ou les exécutions concurrentes.
+
+La règle de sécurité centrale est la suivante : une synchronisation vide, incomplète, en erreur ou jugée dangereuse ne désactive aucun produit. L’ERP restera à terme l’unique source de vérité ; le Lot 2 utilise toujours des fixtures JSON et ne contient aucun code Sage ou SQL Server.
 
 ## Architecture
 
 ```text
-fixtures/products.json (60 produits déterministes)
-        ↓
+fixtures JSON
+      ↓
 JsonProductSource derrière IProductSource
-        ↓
-Worker .NET 10 (ponctuel ou continu)
-        ↓ Basic Auth + Application Password
-POST /wp-json/catalog-sync/v1/products
-        ↓
-Plugin Product Catalog Sync
-        ↓
-wp_catalog_products + wp_catalog_sync_runs
-        ↓
+      ↓ validation, normalisation et SHA-256
+Worker .NET 10
+      ↓ HTTPS sortant (HTTP local explicitement autorisé)
+POST /wp-json/catalog-sync/v1/runs
+      ↓
+POST /wp-json/catalog-sync/v1/runs/{runId}/products
+      ↓
+POST /wp-json/catalog-sync/v1/runs/{runId}/complete
+      ↓
+Tables WordPress dédiées
+      ↓
 GET /wp-json/catalog/v1/products?page=1&per_page=24
 ```
 
-WordPress est un miroir public. L’ERP restera la source de vérité. Dans l’architecture cible, le Worker sera installé dans le réseau interne et n’effectuera que des connexions HTTPS sortantes. Aucune connexion entrante vers le futur serveur Sage n’est prévue.
+Le futur serveur Sage restera dans le réseau interne et n’acceptera aucune connexion entrante depuis Internet. Une source Sage pourra être ajoutée derrière `IProductSource` sans exposer de noms de tables Sage au contrat public.
 
-Le Worker s’appuie sur `IProductSource`. Le Lot 1 fournit `JsonProductSource`; une source Sage pourra être ajoutée plus tard sans modifier la validation, l’orchestration ou le client WordPress.
+Le plugin ne modifie ni le cœur WordPress, ni le thème, ni `wp_posts`, ni `wp_postmeta`. Il utilise :
 
-Le plugin n’utilise ni `wp_posts`, ni `wp_postmeta`, ni le thème. Il crée :
+- `{prefix}catalog_products` pour le miroir produit ;
+- `{prefix}catalog_sync_runs` pour l’historique et les compteurs ;
+- `{prefix}catalog_sync_batches` pour l’idempotence de chaque batch ;
+- `{prefix}catalog_sync_run_items` pour les produits vus et le delta d’un run ;
+- le rôle `catalog_sync` et la capacité minimale `catalog_sync_write`.
 
-- `{prefix}catalog_products`, avec un identifiant source unique et les index nécessaires à la liste publique ;
-- `{prefix}catalog_sync_runs`, pour le résultat de chaque synchronisation acceptée ;
-- le rôle technique `catalog_sync` et la capacité minimale `catalog_sync_write`.
+## Cycle d’un run
 
-La route privée exige une authentification WordPress valide et cette capacité. La route de lecture est publique, limitée à 24 produits par page et ordonnée par nom puis référence.
+```text
+START
+  ↓
+BATCHES
+  ↓
+VALIDATION
+  ↓
+GUARDRAILS
+  ↓
+COMPLETE
+
+ERROR / INTERRUPTION / SOURCE VIDE
+  ↓
+NO DEACTIVATION
+```
+
+### Démarrage
+
+Le Worker génère le UUID et l’envoie à WordPress :
+
+```http
+POST /wp-json/catalog-sync/v1/runs
+```
+
+```json
+{
+  "runId": "71c7ea7a-55c4-4fc0-a721-6ac4cd8e3280",
+  "schemaVersion": 2,
+  "expectedProductCount": 60,
+  "expectedBatchCount": 1,
+  "source": "json-fixture",
+  "dryRun": false
+}
+```
+
+Un replay avec le même `runId` et les mêmes paramètres est idempotent tant que le run est `started` ou `running`. Le même UUID avec des paramètres différents répond HTTP 409. Un UUID arrivé à un état terminal (`completed`, `failed` ou `rejected`) n’est jamais réutilisé et répond HTTP 409 ; le replay du rejet initial d’une source vide reproduit le rejet HTTP 422 sans créer de second run.
+
+WordPress refuse un second run actif. À la création suivante, un run sans activité depuis plus de 30 minutes est marqué `failed`, puis libère le passage. Le Worker possède en plus un verrou local non bloquant pour empêcher deux synchronisations dans le même processus.
+
+### Batches idempotents
+
+```http
+POST /wp-json/catalog-sync/v1/runs/{runId}/products
+```
+
+Le Worker utilise `Sync:BatchSize`, égal à 200 par défaut et limité à 500. WordPress limite également chaque batch à 500 produits. La clé unique `(run_uuid, batch_number)` et un hash du payload permettent de rejouer exactement un batch sans réappliquer les produits ni recompter ses résultats. Le même numéro avec un contenu différent répond HTTP 409.
+
+Les insertions et mises à jour d’un batch sont transactionnelles. Si le Worker est interrompu après quelques batches, certaines valeurs déjà reçues peuvent être visibles, mais aucune désactivation n’a lieu avant `complete`.
+
+### Hash et produits inchangés
+
+Le Worker calcule un SHA-256 déterministe sur :
+
+```text
+sourceId, reference, name, shortDescription,
+familyCode, familyLabel, brand
+```
+
+Les dates techniques, le `runId` et `sourceUpdatedAtUtc` ne participent pas au hash. WordPress recalcule et vérifie le hash après normalisation. Si le hash stocké est identique, aucune colonne métier ni `updated_at` n’est réécrite ; seules les informations techniques de présence et de synchronisation sont actualisées, et le produit est compté comme `unchanged`.
+
+Lors de la première synchronisation après migration du Lot 1, les anciens produits sans `content_hash` sont comparés avec un hash recalculé depuis leur contenu. Une fixture identique peut donc être comptée immédiatement comme inchangée.
+
+### Finalisation et garde-fou
+
+```http
+POST /wp-json/catalog-sync/v1/runs/{runId}/complete
+```
+
+La finalisation vérifie le nombre déclaré, le total reçu, le nombre et la continuité des batches, ainsi que l’unicité des produits vus. Un run incomplet devient `failed` et ne désactive rien.
+
+Pour un run complet, WordPress calcule les produits actifs absents. Le nombre d’actifs de référence est figé au démarrage du run. Si le pourcentage de désactivation dépasse 30 % par défaut, le run devient `rejected` et aucune désactivation n’est appliquée. Une source de zéro produit est rejetée dès le démarrage. Les seuils sont centralisés dans `Sync_Config` et peuvent être adaptés par filtres WordPress :
+
+```text
+product_catalog_sync_max_batch_products
+product_catalog_sync_max_deactivation_percentage
+product_catalog_sync_run_timeout_minutes
+product_catalog_sync_history_retention_days
+```
+
+Un produit absent est conservé avec `is_active = 0`. S’il revient dans un run ultérieur, il est automatiquement réactivé et compté dans `reactivated_count`.
+
+### Dry-run
+
+Le dry-run crée un journal, des batches et des éléments de run afin de calculer le delta avec les données WordPress actuelles. Il n’écrit aucune colonne de `catalog_products` : aucune insertion, mise à jour, activation ou désactivation n’est appliquée.
+
+Le résultat indique les nouveaux, modifiés, inchangés, à réactiver, à désactiver, le pourcentage et l’état du garde-fou.
+
+### Retries et historique
+
+Le client HTTP effectue au plus trois tentatives avec un délai croissant sur les erreurs réseau, timeouts, et HTTP 408, 429, 500, 502, 503 ou 504. Il ne retente pas les erreurs 400, 401, 403 ou 404. Chaque tentative reconstruit la requête avec le même `runId` ou le même batch, ce qui rend un accusé de réception perdu rejouable.
+
+Les runs terminaux de plus de 90 jours sont nettoyés opportunément, par groupes bornés, après une finalisation réussie. Ce nettoyage ne touche jamais aux produits.
 
 ## Prérequis
 
 - Windows avec PowerShell 5.1 ou PowerShell 7 ;
-- Docker Desktop démarré, avec Docker Compose v2 ;
-- SDK .NET 10 pour construire, tester et exécuter le Worker ;
-- le port local `8080` disponible, ou un autre port configuré de façon cohérente dans `.env`.
+- Docker Desktop et Docker Compose v2 ;
+- SDK .NET 10 ;
+- port `8080` disponible, sauf configuration locale cohérente différente.
 
-Installez le SDK .NET 10 depuis la [page officielle .NET](https://dotnet.microsoft.com/download/dotnet/10.0), puis vérifiez sa présence :
+Installez .NET 10 depuis la [page officielle .NET](https://dotnet.microsoft.com/download/dotnet/10.0), puis vérifiez :
 
 ```powershell
 dotnet --list-sdks
 ```
 
-La liste doit contenir au moins une version `10.0.x`.
+PHP et MariaDB sont fournis par Docker. Aucun Composer ni framework PHP supplémentaire n’est nécessaire.
 
-PHP et MariaDB n’ont pas besoin d’être installés sur l’hôte : Docker fournit WordPress, MariaDB et WP-CLI. Un binaire PHP local reste utile, mais facultatif, pour lancer directement `php -l`.
-
-`run-worker-local.ps1` préfère une installation locale dans `.dotnet/dotnet.exe` à la racine du dépôt, puis utilise `dotnet` dans `PATH`. Dans les deux cas, il vérifie qu’un SDK .NET 10 est disponible. Le répertoire `.dotnet` est ignoré par Git.
-
-## Structure du dépôt
+## Structure
 
 ```text
 ProductCatalogSync.sln
-├── fixtures/products.json                 # 60 produits fictifs
-├── src/Catalog.Contracts                  # contrat JSON indépendant de Sage
-├── src/Catalog.Sync.Worker                # source JSON, validation et client HTTP
-├── tests/Catalog.Sync.Worker.Tests        # tests xUnit déterministes
-├── wordpress/product-catalog-sync         # plugin autonome
-├── scripts/bootstrap-local.ps1            # installation locale idempotente
-├── scripts/run-worker-local.ps1           # exécution avec la configuration locale
-├── scripts/smoke-test.ps1                  # contrôle de bout en bout
-├── docker-compose.yml
-└── docs/decisions/0001-lot-1-architecture.md
+├── fixtures/
+│   ├── products.json
+│   ├── products-update.json
+│   ├── products-reactivation.json
+│   ├── products-dangerous.json
+│   ├── products-empty.json
+│   └── products-duplicate-source-id.json
+├── src/Catalog.Contracts
+├── src/Catalog.Sync.Worker
+├── tests/Catalog.Sync.Worker.Tests
+├── wordpress/product-catalog-sync
+├── scripts/bootstrap-local.ps1
+├── scripts/run-worker-local.ps1
+├── scripts/smoke-test.ps1
+├── scripts/smoke-test-lot2.ps1
+└── docs/decisions/
 ```
 
-## Démarrage local avec Docker
+## Démarrage local
 
-Depuis la racine du dépôt, créez d’abord la configuration Docker locale :
+Créez la configuration locale Docker :
 
 ```powershell
 Copy-Item .env.example .env
 notepad .env
 ```
 
-Les valeurs de `.env.example` ne sont que des exemples destinés à une machine locale. `.env` est ignoré par Git.
+`.env.example` contient uniquement des valeurs fictives locales. `.env` et `.env.worker.local` sont ignorés par Git.
 
-Lancez ensuite le bootstrap :
+Lancez ensuite :
 
 ```powershell
 .\scripts\bootstrap-local.ps1
 ```
 
-Si `.env` est absent, le script le crée automatiquement depuis `.env.example`. Le bootstrap :
+Le bootstrap démarre MariaDB et WordPress, installe WordPress si nécessaire, active le plugin, crée l’utilisateur technique et son Application Password, puis génère `.env.worker.local` sans afficher le secret. Il est conçu pour conserver un secret local déjà valide lors d’une relance.
 
-1. vérifie Docker et Docker Compose ;
-2. démarre MariaDB et WordPress et attend leurs healthchecks ;
-3. installe WordPress si nécessaire ;
-4. active le plugin monté depuis `wordpress/product-catalog-sync` ;
-5. crée ou remet à jour l’utilisateur technique `catalog_sync` ;
-6. crée une Application Password dédiée au Worker ;
-7. écrit `.env.worker.local` sans afficher le secret.
+Le service `wpcli` possède l’entrypoint explicite `wp`. Si le bootstrap échoue après le démarrage, l’installation peut être terminée depuis <http://localhost:8080> : activez **Product Catalog Sync**, créez un utilisateur au rôle `catalog_sync`, créez son Application Password, puis renseignez uniquement `.env.worker.local`.
 
-Le script est conçu pour être relancé. Tant que `.env.worker.local` et l’Application Password correspondante existent, il conserve le secret déjà créé.
+Le plugin est monté directement dans WordPress ; aucune image Docker ne doit être reconstruite. Les volumes Docker conservent WordPress et MariaDB entre les redémarrages.
 
-Le service Compose `wpcli` fixe explicitement son entrypoint à `wp`. Cette correction évite que `docker compose run ... wpcli core ...` tente d’exécuter directement une commande nommée `core`. Elle n’a pas été validée sur une installation WordPress vierge afin de préserver les volumes locaux fonctionnels.
+## Migration Lot 1 vers Lot 2
 
-Si le bootstrap s’interrompt néanmoins après le démarrage des conteneurs, terminez l’installation avec l’assistant à <http://localhost:8080>, activez **Product Catalog Sync** dans l’administration, puis créez l’utilisateur technique avec le rôle `catalog_sync` et son Application Password depuis l’interface WordPress. Reportez uniquement ces valeurs dans `.env.worker.local`, qui est ignoré par Git. Ne placez aucun secret dans le README ou dans un fichier suivi.
+Le plugin porte une version de schéma interne. Au premier chargement de la version 0.2.0, `dbDelta` ajoute les colonnes et tables du Lot 2 à l’installation active. La migration ne supprime, ne renomme et ne tronque aucune table ou ligne du Lot 1. Il n’est pas nécessaire de désactiver le plugin ni de réinstaller WordPress.
 
-Le montage du plugin est direct : une modification PHP locale est visible dans le conteneur sans reconstruire d’image. Les volumes `wordpress_data` et `mariadb_data` conservent les données entre les redémarrages.
+## Exécuter le Worker
 
-Pour consulter l’état ou les journaux :
-
-```powershell
-docker compose --env-file .env ps
-docker compose --env-file .env logs -f wordpress db
-```
-
-WordPress est disponible sur <http://localhost:8080> avec les valeurs d’exemple.
-
-## Exécution du Worker
-
-Une seule synchronisation :
+Fixture par défaut, une seule fois :
 
 ```powershell
 .\scripts\run-worker-local.ps1 -RunOnce
 ```
 
-Mode continu, avec une première synchronisation immédiate puis une attente de 15 minutes par défaut :
+Choisir une fixture :
+
+```powershell
+.\scripts\run-worker-local.ps1 -RunOnce -ProductFile .\fixtures\products-update.json
+```
+
+Dry-run utilisant les données WordPress actuelles :
+
+```powershell
+.\scripts\run-worker-local.ps1 -RunOnce -DryRun -ProductFile .\fixtures\products-update.json
+```
+
+Mode continu, première synchronisation immédiate puis toutes les 15 minutes :
 
 ```powershell
 .\scripts\run-worker-local.ps1
 ```
 
-Le script charge `.env.worker.local` dans les variables d’environnement .NET puis exécute le projet. `Ctrl+C` demande un arrêt propre en mode continu.
-
-Après avoir positionné vous-même les variables nécessaires, la commande directe équivalente est :
+Commande .NET directe, après avoir fourni les variables d’environnement :
 
 ```powershell
 dotnet run --project .\src\Catalog.Sync.Worker -- --run-once
+dotnet run --project .\src\Catalog.Sync.Worker -- --run-once --dry-run
 ```
 
-Les paramètres peuvent être surchargés avec la convention .NET :
+Principales surcharges de configuration :
 
 ```text
 WordPress__BaseUrl
-WordPress__SyncEndpoint
+WordPress__RunsEndpoint
 WordPress__Username
 WordPress__ApplicationPassword
 WordPress__RequestTimeoutSeconds
+WordPress__MaxRetryAttempts
+WordPress__RetryBaseDelayMilliseconds
 WordPress__AllowInsecureHttpForLocalDevelopment
 ProductSource__JsonFilePath
 Sync__IntervalMinutes
+Sync__BatchSize
 ```
 
-Le Worker refuse une URL HTTP hors du développement local explicitement autorisé. Il ne journalise ni l’Application Password, ni l’en-tête `Authorization`, ni les identifiants complets.
+`WordPress__SyncEndpoint`, utilisé par le Lot 1, reste toléré dans un ancien fichier local mais n’est plus utilisé. Le Worker refuse HTTP hors d’une URL loopback explicitement autorisée et ne journalise jamais les secrets ou l’en-tête `Authorization`.
+
+## Fixtures Lot 2
+
+| Fixture | Résultat prévu depuis l’étape précédente |
+|---|---|
+| `products.json` | 60 produits actifs |
+| `products-update.json` | 2 absents, 2 ajouts, 3 modifiés, 55 inchangés, toujours 60 actifs |
+| `products-reactivation.json` | 2 réactivés, 60 inchangés, 62 actifs |
+| `products-dangerous.json` | 5 produits seulement, rejet du garde-fou, 62 actifs conservés |
+| `products-empty.json` | rejet immédiat, catalogue conservé |
+| `products-duplicate-source-id.json` | doublon détecté avant l’appel WordPress |
+
+Lors d’une seconde exécution complète du smoke test, les identifiants `MOCK-0061` et `MOCK-0062` existent déjà dans l’historique et sont réactivés plutôt qu’insérés ; le catalogue public attendu reste identique.
 
 ## API publique
 
-La première synchronisation doit produire trois pages : 24, 24 et 12 produits.
+```http
+GET /wp-json/catalog/v1/products?page=1&per_page=24
+```
 
 PowerShell :
 
@@ -166,30 +277,11 @@ Avec curl :
 curl.exe "http://localhost:8080/wp-json/catalog/v1/products?page=1&per_page=24"
 ```
 
-La réponse contient `items` et :
+`page` commence à 1, `per_page` vaut 24 par défaut et ne dépasse jamais 24. La pagination reste réalisée en SQL. Les produits `is_active = 0` ne sont jamais retournés. Une page hors limites répond HTTP 200 avec `items: []` et les totaux corrects.
 
-```json
-{
-  "pagination": {
-    "page": 1,
-    "perPage": 24,
-    "totalItems": 60,
-    "totalPages": 3
-  }
-}
-```
+Les trois routes d’écriture privées exigent une Application Password valide et `catalog_sync_write`. Un appel anonyme reçoit 401 ou 403. Aucun CORS permissif n’est ajouté.
 
-`page` doit être supérieur ou égal à 1. `per_page` vaut 24 par défaut et ne peut pas dépasser 24. Une page au-delà de la dernière retourne HTTP 200 avec `items: []` et les totaux corrects.
-
-La route privée est :
-
-```text
-POST /wp-json/catalog-sync/v1/products
-```
-
-Un appel anonyme reçoit 401 ou 403. Pour éviter d’exposer l’Application Password dans l’historique du terminal, utilisez le Worker plutôt qu’une commande curl contenant le secret.
-
-## Build et tests .NET
+## Build, tests et lint
 
 ```powershell
 dotnet restore .\ProductCatalogSync.sln
@@ -197,149 +289,105 @@ dotnet build .\ProductCatalogSync.sln --no-restore
 dotnet test .\ProductCatalogSync.sln --no-build
 ```
 
-Les tests xUnit ne dépendent pas de Docker. Ils couvrent la source JSON, la validation, le client HTTP avec un faux `HttpMessageHandler` et le mode `--run-once`.
+Les tests xUnit sont déterministes et n’utilisent pas Docker. Ils couvrent notamment validation, source vide, doublons, batching, hash, dry-run, interruption, concurrence locale, sérialisation du `runId`, retries temporaires et absence de retry sur les erreurs client.
 
-## Vérification PHP
-
-Avec PHP installé sur l’hôte :
+Lint PHP depuis l’hôte, si PHP est installé :
 
 ```powershell
 Get-ChildItem .\wordpress\product-catalog-sync -Recurse -Filter *.php |
     ForEach-Object { php -l $_.FullName }
 ```
 
-Ou dans le conteneur WP-CLI, après le bootstrap :
+Ou sans installation locale, avec le conteneur WordPress déjà actif :
 
 ```powershell
-docker compose --env-file .env --profile tools run --rm --no-deps --entrypoint php wpcli `
-    -l /var/www/html/wp-content/plugins/product-catalog-sync/product-catalog-sync.php
+docker compose exec -T wordpress sh -c "find /var/www/html/wp-content/plugins/product-catalog-sync -name '*.php' -type f -exec php -l {} \;"
 ```
 
-## Smoke test de bout en bout
+## Smoke tests
 
-Une fois Docker démarré et le bootstrap terminé :
+Le contrôle historique du Lot 1 reste disponible :
 
 ```powershell
 .\scripts\smoke-test.ps1
 ```
 
-Le script :
-
-- vérifie que WordPress répond ;
-- exige le refus du POST anonyme ;
-- synchronise les 60 produits ;
-- vérifie les pages de 24, 24 et 12 éléments, `totalItems = 60` et `totalPages = 3` ;
-- vérifie que les 60 identifiants source sont distincts ;
-- relance la synchronisation et confirme que le total reste égal à 60.
-
-Toute erreur produit un message indiquant l’étape concernée et un code de sortie non nul.
-
-## Arrêt et réinitialisation
-
-Arrêter les conteneurs sans perdre les données :
+Le scénario Lot 2 modifie volontairement l’état du miroir selon les fixtures, puis termine avec 62 produits actifs. Lancez-le uniquement sur l’environnement local de test :
 
 ```powershell
-docker compose --env-file .env down
+.\scripts\smoke-test-lot2.ps1
 ```
 
-La commande suivante supprime volontairement la base et les fichiers WordPress persistés :
+Il vérifie le run initial, une synchronisation identique, les modifications/désactivations, la réactivation, les rejets dangereux/vide/doublon, le dry-run, le replay de `POST /runs`, le conflit de paramètres et le refus de réutiliser un UUID terminé. Il ne supprime aucune donnée ni aucun volume.
 
-```powershell
-docker compose --env-file .env down --volumes
-Remove-Item .env.worker.local -ErrorAction SilentlyContinue
-.\scripts\bootstrap-local.ps1
-```
+### UTF-8 sous Windows PowerShell 5.1
 
-Conservez `.env` si vous souhaitez réutiliser les mêmes paramètres locaux. Après la suppression des volumes, supprimez aussi `.env.worker.local` afin que le bootstrap crée une Application Password correspondant à la nouvelle installation.
+Les scripts PowerShell contenant des caractères non ASCII sont enregistrés en UTF-8 avec BOM pour rester correctement interprétés par Windows PowerShell 5.1. Le smoke test Lot 2 lit les fixtures avec `Get-Content -Raw -Encoding UTF8` et énumère explicitement le tableau renvoyé par `ConvertFrom-Json` avant tout filtre ou tri.
 
-## Problèmes fréquents
+Pour les appels REST privés construits directement par le smoke test, le JSON est converti en octets avec `[Text.Encoding]::UTF8.GetBytes(...)` et envoyé avec `application/json; charset=utf-8`. Les assertions sur le résultat du Worker utilisent la ligne structurée ASCII `CATALOG_SYNC_RESULT_V1` et ne dépendent donc pas de l’encodage visuel des logs localisés. Sous certaines configurations de console anciennes, les accents des logs humains peuvent encore être mal affichés sans affecter les validations ni la synchronisation.
 
-### Docker Desktop ne répond pas
+## Docker : arrêt et reprise
 
-Le bootstrap s’arrête sur `docker info`. Démarrez Docker Desktop, attendez que le moteur soit prêt, puis relancez le script.
-
-### Le port 8080 est occupé
-
-Modifiez ensemble `WORDPRESS_PORT` et `WORDPRESS_SITE_URL` dans `.env`, par exemple `8081` et `http://localhost:8081`, puis réinitialisez l’installation si WordPress avait déjà enregistré l’ancienne URL.
-
-### WordPress reste indisponible
-
-Inspectez les services et leurs journaux :
+État et journaux :
 
 ```powershell
 docker compose --env-file .env ps
-docker compose --env-file .env logs wordpress db
+docker compose --env-file .env logs -f wordpress db
 ```
 
-Un premier téléchargement d’images peut prendre plusieurs minutes. Vérifiez aussi que Docker Desktop autorise le partage du lecteur contenant le dépôt, nécessaire au montage du plugin.
+Arrêt sans perte de données, puis redémarrage :
+
+```powershell
+docker compose --env-file .env stop
+docker compose --env-file .env start
+```
+
+Une réinitialisation avec `down --volumes` détruit volontairement WordPress et MariaDB. Elle n’est pas nécessaire pour la migration Lot 2 et ne doit être utilisée qu’après sauvegarde et décision explicite.
+
+## Problèmes fréquents
+
+### Un run est déjà actif
+
+WordPress répond HTTP 409. Attendez la fin du Worker actif. Un run réellement interrompu est déclaré périmé lors d’un nouveau démarrage après 30 minutes ; aucune désactivation n’a lieu pour ce run.
+
+### Le garde-fou rejette une fixture attendue
+
+Le seuil compare les absents au nombre d’actifs figé au démarrage. Utilisez d’abord `-DryRun` pour voir le delta. Ne relevez pas le seuil sans comprendre la différence de source.
 
 ### L’Application Password est refusée en HTTP local
 
-Le Compose définit `WP_ENVIRONMENT_TYPE` à `local`, ce qui autorise les Application Passwords sur `http://localhost`. Cette tolérance ne doit jamais être reproduite en production : utilisez HTTPS et désactivez `AllowInsecureHttpForLocalDevelopment`.
+Compose définit `WP_ENVIRONMENT_TYPE` à `local`. En production, utilisez exclusivement HTTPS et désactivez `AllowInsecureHttpForLocalDevelopment`.
 
-### Le Worker ne trouve pas `products.json`
+### Le Worker ne trouve pas une fixture
 
-Relancez `bootstrap-local.ps1`. Il écrit un chemin absolu vers `fixtures/products.json` dans `.env.worker.local`. N’utilisez jamais un chemin interne ou réseau dans un payload public.
+`-ProductFile` accepte un chemin absolu ou relatif à la racine du dépôt. Sans ce paramètre, `.env.worker.local` fournit normalement le chemin absolu de `products.json`.
 
-### Le secret local ne correspond plus à WordPress
+### La migration ne semble pas appliquée
 
-Cela peut arriver après une réinitialisation des volumes. Supprimez `.env.worker.local`, puis relancez le bootstrap pour générer une nouvelle Application Password.
-
-### Une modification de schéma du plugin n’apparaît pas
-
-La simple modification d’un fichier PHP est immédiatement montée. Pour rejouer l’activation et `dbDelta` :
-
-```powershell
-docker compose --env-file .env run --rm wpcli plugin deactivate product-catalog-sync
-docker compose --env-file .env run --rm wpcli plugin activate product-catalog-sync
-```
-
-La désactivation ne supprime aucune donnée.
+Chargez une fois WordPress ou son API. Le hook `plugins_loaded` compare la version de schéma et exécute la migration additive automatiquement. Consultez ensuite les logs WordPress ; ne réinstallez pas WordPress et ne supprimez pas les volumes.
 
 ## Gestion des secrets
 
-Les fichiers `.env` et `.env.worker.local` sont ignorés par Git. `.env.example` ne contient que des valeurs d’exemple locales. Ne commitez jamais :
+`.env`, `.env.worker.local`, les variantes locales d’`appsettings` et `Mdp.txt` sont ignorés par Git. `.env.example` ne contient que des valeurs fictives. Ne commitez jamais :
 
-- mot de passe MariaDB ou WordPress réel ;
-- Application Password ;
-- en-tête HTTP `Authorization` ;
-- identifiant ou chemin du réseau interne.
+- un mot de passe MariaDB ou WordPress réel ;
+- une Application Password ;
+- un en-tête `Authorization` ;
+- un chemin ou identifiant du réseau interne.
 
-En production, fournissez les paramètres par le mécanisme sécurisé de la plateforme d’exécution et utilisez exclusivement HTTPS. Le fichier JSON de ce lot ne contient ni prix, ni stock, ni donnée sensible.
-
-Avant tout partage du dépôt, un contrôle simple des fichiers suivis est recommandé :
+Contrôles recommandés avant partage :
 
 ```powershell
 git status --short
-git grep -n -I -E "ApplicationPassword|Authorization|password"
+git ls-files .env .env.worker.local
 ```
 
-Les mentions de configuration ou les valeurs factices de `.env.example` sont attendues ; tout secret réel doit être retiré et révoqué.
+Les fixtures ne contiennent ni prix, ni stock, ni donnée confidentielle.
 
-## Limites volontaires du Lot 1
+## Limites volontaires du Lot 2
 
-Ce lot ne fournit pas :
+Le Lot 2 ne fournit pas de connexion Sage ou SQL Server, gMSA, service Windows, frontend React, image, recherche, filtre, route de détail, PDF, fiche technique, SEO ou multilingue. Il ne fournit pas non plus de synchronisation différentielle ni de file de commandes WordPress vers le Worker.
 
-- de connexion Sage ou SQL Server, ni de schéma Sage supposé ;
-- d’installation en service Windows, de gMSA ou de stratégie de redémarrage ;
-- de frontend React ou de page visuelle WordPress ;
-- de recherche, filtre, tri configurable ou route de détail ;
-- d’image, miniature, pictogramme, PDF ou fiche technique ;
-- de prix, stock ou donnée confidentielle ;
-- de synchronisation par lots ou différentielle, de mode `dry-run` ou de file de commandes ;
-- de désactivation des produits absents, de nettoyage ou d’administration éditoriale ;
-- de SEO ou de multilingue.
+Les mises à jour déjà validées par un batch peuvent devenir visibles avant `complete`; la garantie stricte est qu’aucun produit absent n’est désactivé avant une finalisation complète et acceptée.
 
-Le Lot 1 envoie au maximum 500 produits dans une requête et ne désactive pas ceux qui sont absents du payload.
-
-## Lots suivants
-
-Les évolutions prévues pourront ajouter, sans modifier le contrat public :
-
-- une implémentation Sage de `IProductSource` dans le réseau interne ;
-- l’hébergement du Worker comme service Windows avec HTTPS sortant uniquement ;
-- la synchronisation par lots, différentielle et les reprises contrôlées ;
-- la désactivation des produits absents ;
-- le frontend React, puis la recherche, les filtres, les images et les fiches techniques selon les lots validés.
-
-La décision d’architecture est détaillée dans [docs/decisions/0001-lot-1-architecture.md](docs/decisions/0001-lot-1-architecture.md).
+Les décisions sont détaillées dans [ADR 0001](docs/decisions/0001-lot-1-architecture.md) et [ADR 0002](docs/decisions/0002-sync-reliability.md).
