@@ -426,23 +426,28 @@ final class Catalog_Repository {
 	 * @param int $per_page Page size.
 	 * @return array
 	 */
-	public function get_active_products( $page, $per_page ) {
-		$table = $this->products_table();
-		$total = $this->wpdb->get_var( "SELECT COUNT(*) FROM {$table} WHERE is_active = 1" );
+	public function get_active_products( $page, $per_page, $search = '', $family = '', $brand = '' ) {
+		$table                    = $this->products_table();
+		$filters                  = $this->build_public_product_filters( $search, $family, $brand );
+		$where_sql                = implode( ' AND ', $filters['clauses'] );
+		$count_sql                = $this->wpdb->prepare(
+			"SELECT COUNT(*) FROM {$table} WHERE {$where_sql}",
+			$filters['parameters']
+		);
+		$total                    = $this->wpdb->get_var( $count_sql );
 		$this->throw_on_last_error( 'Unable to count catalog products.' );
 
 		$maximum_page_before_overflow = intdiv( PHP_INT_MAX, $per_page );
 		$offset = $page > $maximum_page_before_overflow ? PHP_INT_MAX : ( $page - 1 ) * $per_page;
+		$query_parameters = array_merge( $filters['parameters'], array( $per_page, $offset ) );
 		$sql    = $this->wpdb->prepare(
-			"SELECT source_id, reference, name, short_description, family_code,
+			"SELECT id, source_id, reference, name, short_description, family_code,
 				family_label, brand, source_updated_at
 			FROM {$table}
-			WHERE is_active = %d
+			WHERE {$where_sql}
 			ORDER BY name ASC, reference ASC, source_id ASC
 			LIMIT %d OFFSET %d",
-			1,
-			$per_page,
-			$offset
+			$query_parameters
 		);
 		$rows = $this->wpdb->get_results( $sql, ARRAY_A );
 		if ( '' !== $this->wpdb->last_error || ! is_array( $rows ) ) {
@@ -451,21 +456,117 @@ final class Catalog_Repository {
 
 		$items = array();
 		foreach ( $rows as $row ) {
-			$items[] = array(
-				'sourceId'          => $row['source_id'],
-				'reference'         => $row['reference'],
-				'name'              => $row['name'],
-				'shortDescription'  => $row['short_description'],
-				'familyCode'        => $row['family_code'],
-				'familyLabel'       => $row['family_label'],
-				'brand'             => $row['brand'],
-				'sourceUpdatedAtUtc' => null === $row['source_updated_at']
-					? null
-					: str_replace( ' ', 'T', $row['source_updated_at'] ) . 'Z',
-			);
+			$items[] = $this->public_product( $row );
 		}
 
 		return array( 'items' => $items, 'total_items' => (int) $total );
+	}
+
+	/**
+	 * Returns the active public product identified by its mirror ID.
+	 *
+	 * @param int $product_id Product mirror ID.
+	 * @return array|null
+	 */
+	public function get_active_product( $product_id ) {
+		$table = $this->products_table();
+		$sql   = $this->wpdb->prepare(
+			"SELECT id, source_id, reference, name, short_description, family_code,
+				family_label, brand, source_updated_at
+			FROM {$table}
+			WHERE id = %d AND is_active = %d
+			LIMIT 1",
+			$product_id,
+			1
+		);
+		$row = $this->wpdb->get_row( $sql, ARRAY_A );
+		$this->throw_on_last_error( 'Unable to read the catalog product.' );
+
+		return is_array( $row ) ? $this->public_product( $row ) : null;
+	}
+
+	/**
+	 * Returns active family and brand facets without loading products in PHP.
+	 *
+	 * @return array
+	 */
+	public function get_active_product_filters() {
+		$table = $this->products_table();
+		$families = $this->wpdb->get_results(
+			"SELECT family_code, MAX(NULLIF(family_label, '')) AS family_label
+			FROM {$table}
+			WHERE is_active = 1 AND family_code IS NOT NULL AND family_code <> ''
+			GROUP BY family_code
+			ORDER BY COALESCE(MAX(NULLIF(family_label, '')), family_code) ASC, family_code ASC",
+			ARRAY_A
+		);
+		if ( '' !== $this->wpdb->last_error || ! is_array( $families ) ) {
+			throw new \RuntimeException( 'Unable to read catalog family filters.' );
+		}
+
+		$brands = $this->wpdb->get_col(
+			"SELECT DISTINCT brand FROM {$table}
+			WHERE is_active = 1 AND brand IS NOT NULL AND brand <> ''
+			ORDER BY brand ASC"
+		);
+		if ( '' !== $this->wpdb->last_error || ! is_array( $brands ) ) {
+			throw new \RuntimeException( 'Unable to read catalog brand filters.' );
+		}
+
+		return array(
+			'families' => array_map(
+				static function ( array $family ) {
+					return array(
+						'code'  => $family['family_code'],
+						'label' => empty( $family['family_label'] )
+							? $family['family_code']
+							: $family['family_label'],
+					);
+				},
+				$families
+			),
+			'brands'   => array_values( $brands ),
+		);
+	}
+
+	/** @return array */
+	private function build_public_product_filters( $search, $family, $brand ) {
+		$clauses    = array( 'is_active = %d' );
+		$parameters = array( 1 );
+
+		if ( '' !== $search ) {
+			$like       = '%' . $this->wpdb->esc_like( $search ) . '%';
+			$clauses[]  = '(reference LIKE %s OR name LIKE %s OR brand LIKE %s OR family_label LIKE %s)';
+			$parameters = array_merge( $parameters, array( $like, $like, $like, $like ) );
+		}
+		if ( '' !== $family ) {
+			$clauses[]    = 'family_code = %s';
+			$parameters[] = $family;
+		}
+		if ( '' !== $brand ) {
+			$clauses[]    = 'brand = %s';
+			$parameters[] = $brand;
+		}
+
+		return array( 'clauses' => $clauses, 'parameters' => $parameters );
+	}
+
+	/** @return array */
+	private function public_product( array $row ) {
+		return array(
+			'id'                 => (int) $row['id'],
+			'sourceId'           => $row['source_id'],
+			'reference'          => $row['reference'],
+			'name'               => $row['name'],
+			'shortDescription'   => $row['short_description'],
+			'familyCode'         => $row['family_code'],
+			'familyLabel'        => $row['family_label'],
+			'brand'              => $row['brand'],
+			'imageUrl'           => null,
+			'sourceUpdatedAtUtc' => null === $row['source_updated_at']
+				? null
+				: str_replace( ' ', 'T', $row['source_updated_at'] ) . 'Z',
+		);
 	}
 
 	/** @return string Action: inserted, updated, unchanged or reactivated. */

@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-labelledby="title description">
+  <title id="title">Image produit indisponible</title>
+  <desc id="description">Illustration abstraite représentant un colis produit.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f5f9f8"/>
+      <stop offset="1" stop-color="#e2ece9"/>
+    </linearGradient>
+    <linearGradient id="box" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b8170"/>
+      <stop offset="1" stop-color="#176b5b"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="600" fill="url(#background)"/>
+  <circle cx="400" cy="280" r="190" fill="#fff" opacity=".68"/>
+  <path d="M265 226 400 154l135 72-135 72z" fill="#4b9a8a"/>
+  <path d="m265 226 135 72v154l-135-75z" fill="url(#box)"/>
+  <path d="m535 226-135 72v154l135-75z" fill="#0f5145"/>
+  <path d="M400 298v154" fill="none" stroke="#b9ddd5" stroke-width="8" opacity=".55"/>
+  <path d="m337 188 136 72" fill="none" stroke="#d9f0eb" stroke-width="10" opacity=".7"/>
+  <text x="400" y="520" fill="#46635d" font-family="Arial, sans-serif" font-size="26" text-anchor="middle">
+    Image produit à venir
+  </text>
+</svg>

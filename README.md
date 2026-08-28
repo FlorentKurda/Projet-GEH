@@ -1,6 +1,6 @@
-# Product Catalog Sync — Lot 2
+# Product Catalog Sync — Lot 3A
 
-Ce dépôt implémente un miroir public WordPress alimenté par un Worker .NET 10. Le Lot 2 fiabilise le Lot 1 avec un cycle explicite `start → batches → complete`, la détection des produits inchangés, la désactivation contrôlée des absents, un dry-run et des protections contre les erreurs réseau ou les exécutions concurrentes.
+Ce dépôt implémente un miroir public WordPress alimenté par un Worker .NET 10. Le Lot 2 fiabilise la synchronisation avec un cycle explicite `start → batches → complete`. Le Lot 3A ajoute une page catalogue React/TypeScript intégrée au plugin WordPress, sans dépendance à Sage et sans serveur Node en production.
 
 La règle de sécurité centrale est la suivante : une synchronisation vide, incomplète, en erreur ou jugée dangereuse ne désactive aucun produit. L’ERP restera à terme l’unique source de vérité ; le Lot 2 utilise toujours des fixtures JSON et ne contient aucun code Sage ou SQL Server.
 
@@ -22,6 +22,8 @@ POST /wp-json/catalog-sync/v1/runs/{runId}/complete
 Tables WordPress dédiées
       ↓
 GET /wp-json/catalog/v1/products?page=1&per_page=24
+      ↓
+Frontend React statique chargé par [product_catalog]
 ```
 
 Le futur serveur Sage restera dans le réseau interne et n’acceptera aucune connexion entrante depuis Internet. Une source Sage pourra être ajoutée derrière `IProductSource` sans exposer de noms de tables Sage au contrat public.
@@ -158,11 +160,13 @@ ProductCatalogSync.sln
 ├── src/Catalog.Contracts
 ├── src/Catalog.Sync.Worker
 ├── tests/Catalog.Sync.Worker.Tests
+├── frontend                             # React, TypeScript, Vite et tests Vitest
 ├── wordpress/product-catalog-sync
 ├── scripts/bootstrap-local.ps1
 ├── scripts/run-worker-local.ps1
 ├── scripts/smoke-test.ps1
 ├── scripts/smoke-test-lot2.ps1
+├── scripts/smoke-test-lot3a.ps1
 └── docs/decisions/
 ```
 
@@ -260,7 +264,9 @@ Lors d’une seconde exécution complète du smoke test, les identifiants `MOCK-
 ## API publique
 
 ```http
-GET /wp-json/catalog/v1/products?page=1&per_page=24
+GET /wp-json/catalog/v1/products?page=1&per_page=24&search=outil&family=FAM-OUT&brand=Novatool
+GET /wp-json/catalog/v1/filters
+GET /wp-json/catalog/v1/products/{id}
 ```
 
 PowerShell :
@@ -277,9 +283,49 @@ Avec curl :
 curl.exe "http://localhost:8080/wp-json/catalog/v1/products?page=1&per_page=24"
 ```
 
-`page` commence à 1, `per_page` vaut 24 par défaut et ne dépasse jamais 24. La pagination reste réalisée en SQL. Les produits `is_active = 0` ne sont jamais retournés. Une page hors limites répond HTTP 200 avec `items: []` et les totaux corrects.
+`page` commence à 1, `per_page` vaut 24 par défaut et ne dépasse jamais 24. La pagination reste réalisée en SQL. `search` est limité à 100 caractères et recherche dans la référence, le nom, la marque et le libellé de famille. `family` filtre exactement le code famille et `brand` la marque ; les trois critères sont combinables.
+
+`filters` retourne les familles et marques distinctes des seuls produits actifs. Le détail utilise l’ID opaque de la ligne miroir, indépendant de Sage. Les produits `is_active = 0` ne sont retournés ni par la liste, ni par les facettes, ni par le détail. Une page hors limites répond HTTP 200 avec `items: []` et les totaux corrects ; un détail absent ou inactif répond HTTP 404.
 
 Les trois routes d’écriture privées exigent une Application Password valide et `catalog_sync_write`. Un appel anonyme reçoit 401 ou 403. Aucun CORS permissif n’est ajouté.
+
+## Frontend catalogue
+
+Le code source se trouve dans `frontend/`. Le build Vite produit deux fichiers statiques déterministes dans `wordpress/product-catalog-sync/assets/dist/` :
+
+```text
+catalog.js
+catalog.css
+```
+
+React est monté par le shortcode WordPress suivant :
+
+```text
+[product_catalog]
+```
+
+Les assets ne sont chargés que sur une page contenant le shortcode. WordPress transmet au bundle la base REST et l’URL du placeholder local ; aucun domaine localhost, préproduction ou production n’est compilé dans le frontend.
+
+Le catalogue propose les cartes, la recherche différée de 350 ms, les filtres famille/marque, une pagination condensée, le détail produit, le retour à la liste et les états loading/error/empty. Les critères sont conservés dans l’URL :
+
+```text
+?search=perceuse&family=FAM-OUT&brand=Novatool&page=2&product=42
+```
+
+Les anciennes requêtes sont annulées avec `AbortController`. Le CSS est encapsulé sous `geh-catalog-*`, utilise des variables de thème et adapte la grille à quatre, trois, deux puis une colonne. Le type frontend prévoit `imageUrl`; tant qu’aucune image n’est synchronisée, un SVG local est affiché sur la carte et la fiche.
+
+### Développement et build frontend
+
+Node.js 22.12 ou 24 et npm sont recommandés. Depuis la racine :
+
+```powershell
+Set-Location .\frontend
+npm install
+npm run test
+npm run build
+```
+
+`npm run dev` démarre le serveur de développement Vite et relaie localement `/wp-json` et le placeholder vers WordPress sur `http://localhost:8080`. WordPress utilise toujours les assets générés par `npm run build`; aucun serveur Node n’est nécessaire en production.
 
 ## Build, tests et lint
 
@@ -290,6 +336,17 @@ dotnet test .\ProductCatalogSync.sln --no-build
 ```
 
 Les tests xUnit sont déterministes et n’utilisent pas Docker. Ils couvrent notamment validation, source vide, doublons, batching, hash, dry-run, interruption, concurrence locale, sérialisation du `runId`, retries temporaires et absence de retry sur les erreurs client.
+
+Tests et build du frontend :
+
+```powershell
+Set-Location .\frontend
+npm run test
+npm run build
+Set-Location ..
+```
+
+Les tests Vitest couvrent la lecture et la construction de l’état URL ainsi que la pagination condensée. Le build exécute aussi le contrôle TypeScript strict.
 
 Lint PHP depuis l’hôte, si PHP est installé :
 
@@ -319,6 +376,27 @@ Le scénario Lot 2 modifie volontairement l’état du miroir selon les fixtures
 ```
 
 Il vérifie le run initial, une synchronisation identique, les modifications/désactivations, la réactivation, les rejets dangereux/vide/doublon, le dry-run, le replay de `POST /runs`, le conflit de paramètres et le refus de réutiliser un UUID terminé. Il ne supprime aucune donnée ni aucun volume.
+
+Le smoke test Lot 3A est entièrement public et ne modifie aucune donnée :
+
+```powershell
+.\scripts\smoke-test-lot3a.ps1
+```
+
+Il vérifie la liste, la pagination serveur, les facettes, la recherche, les filtres famille/marque, leur combinaison, le détail, la réponse 404 et la limite de taille de recherche.
+
+## Validation visuelle du shortcode
+
+1. Dans l’administration WordPress, créez une page intitulée « Catalogue ».
+2. Ajoutez un bloc Shortcode contenant `[product_catalog]`, puis publiez ou prévisualisez la page.
+3. Vérifiez que 24 produits au maximum apparaissent avec leur référence, nom, marque/famille disponibles et le placeholder.
+4. Recherchez un nom ou une référence, puis attendez la fin du debounce.
+5. Sélectionnez une famille et une marque, puis vérifiez que l’URL reflète les critères.
+6. Changez de page et utilisez le bouton précédent du navigateur.
+7. Ouvrez une fiche avec « Voir le produit », puis revenez à la liste.
+8. Réduisez la fenêtre aux largeurs tablette et mobile et vérifiez la navigation clavier ainsi que le focus visible.
+9. Vérifiez une carte sans marque ou famille et un produit sans description : aucun espace ou contrôle fictif ne doit apparaître.
+10. Ouvrez une carte puis sa fiche et vérifiez que le placeholder local est utilisé aux deux tailles.
 
 ### UTF-8 sous Windows PowerShell 5.1
 
@@ -384,10 +462,10 @@ git ls-files .env .env.worker.local
 
 Les fixtures ne contiennent ni prix, ni stock, ni donnée confidentielle.
 
-## Limites volontaires du Lot 2
+## Limites volontaires du Lot 3A
 
-Le Lot 2 ne fournit pas de connexion Sage ou SQL Server, gMSA, service Windows, frontend React, image, recherche, filtre, route de détail, PDF, fiche technique, SEO ou multilingue. Il ne fournit pas non plus de synchronisation différentielle ni de file de commandes WordPress vers le Worker.
+Le Lot 3A ne fournit pas de connexion Sage ou SQL Server, gMSA, service Windows, synchronisation d’image, image réelle, PDF, fiche technique, pictogramme, panier, commande, espace client, SEO avancé ou multilingue. Il ne fournit pas non plus de synchronisation différentielle ni de file de commandes WordPress vers le Worker.
 
 Les mises à jour déjà validées par un batch peuvent devenir visibles avant `complete`; la garantie stricte est qu’aucun produit absent n’est désactivé avant une finalisation complète et acceptée.
 
-Les décisions sont détaillées dans [ADR 0001](docs/decisions/0001-lot-1-architecture.md) et [ADR 0002](docs/decisions/0002-sync-reliability.md).
+Les décisions sont détaillées dans [ADR 0001](docs/decisions/0001-lot-1-architecture.md), [ADR 0002](docs/decisions/0002-sync-reliability.md) et [ADR 0003](docs/decisions/0003-frontend-catalog.md).

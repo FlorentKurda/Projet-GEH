@@ -5,6 +5,10 @@ TestResults/
 coverage/
 *.trx
 
+# Dépendances et caches frontend
+**/node_modules/
+frontend/.vite/
+
 # Configuration locale et secrets
 .env
 .env.*

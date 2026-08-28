@@ -38,5 +38,6 @@ final class Plugin {
 
 		add_action( 'rest_api_init', array( $sync_controller, 'register_routes' ) );
 		add_action( 'rest_api_init', array( $public_controller, 'register_routes' ) );
+		Catalog_Shortcode::register();
 	}
 }
