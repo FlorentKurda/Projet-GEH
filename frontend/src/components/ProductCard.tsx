@@ -20,8 +20,8 @@ export function ProductCard({ product, placeholderUrl, onOpen }: ProductCardProp
         variant="card"
       />
       <div className="geh-catalog-card__body">
-        <p className="geh-catalog-reference">Réf. {product.reference}</p>
         <h2 className="geh-catalog-card__title">{product.name}</h2>
+        <p className="geh-catalog-reference">Réf. {product.reference}</p>
         {metadata.length > 0 && (
           <p className="geh-catalog-card__meta">{metadata.join(' · ')}</p>
         )}
