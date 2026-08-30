@@ -1,6 +1,7 @@
 name: product-catalog-sync
 
 services:
+
   db:
     image: mariadb:11.4.5
     restart: unless-stopped
@@ -17,6 +18,17 @@ services:
       timeout: 5s
       retries: 30
       start_period: 15s
+    networks:
+      - catalog
+
+  adminer:
+    image: adminer:latest
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    depends_on:
+      db:
+        condition: service_healthy
     networks:
       - catalog
 

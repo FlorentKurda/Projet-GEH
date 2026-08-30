@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createCatalogApi } from './api/catalogApi';
+import { createAssistantCatalogSearch } from './assistant/assistantCatalogSearch';
+import { createAssistantClient } from './assistant/assistantClient';
+import { createDemoAssistantEngine } from './assistant/demoAssistantEngine';
 import { FilterBar } from './components/FilterBar';
 import { LoadingGrid } from './components/LoadingGrid';
 import { Pagination } from './components/Pagination';
 import { ProductCard } from './components/ProductCard';
 import { ProductDetail } from './components/ProductDetail';
+import { ProductAssistant } from './components/assistant/ProductAssistant';
 import { useDebouncedCallback } from './hooks/useDebouncedCallback';
 import type {
   CatalogFiltersResponse,
@@ -13,6 +17,7 @@ import type {
   ProductListResponse,
 } from './types/catalog';
 import {
+  buildCatalogSearch,
   parseCatalogSearch,
   writeCatalogLocation,
   type CatalogLocationState,
@@ -26,6 +31,10 @@ interface AppProps {
 
 export function App({ config }: AppProps) {
   const api = useMemo(() => createCatalogApi(config.restBaseUrl), [config.restBaseUrl]);
+  const assistantClient = useMemo(
+    () => createAssistantClient(createDemoAssistantEngine(createAssistantCatalogSearch(api))),
+    [api],
+  );
   const rootRef = useRef<HTMLElement>(null);
   const openedFromListRef = useRef(false);
   const [location, setLocation] = useState<CatalogLocationState>(() =>
@@ -186,12 +195,20 @@ export function App({ config }: AppProps) {
   };
 
   const handleOpenProduct = (product: Product) => {
-    openedFromListRef.current = true;
+    openedFromListRef.current = location.productId === null;
     setLocation((current) => {
       const next = { ...current, productId: product.id };
       writeCatalogLocation(next, 'push');
       return next;
     });
+  };
+
+  const getProductHref = (product: Product) => {
+    const search = buildCatalogSearch(
+      { ...location, productId: product.id },
+      window.location.search,
+    );
+    return `${window.location.pathname}${search}${window.location.hash}`;
   };
 
   const handleBack = () => {
@@ -215,105 +232,116 @@ export function App({ config }: AppProps) {
 
   if (location.productId !== null) {
     return (
-      <section className="geh-catalog" ref={rootRef} aria-label="Fiche produit">
-        {detailLoading && <div className="geh-catalog-detail-loading">Chargement du produit…</div>}
-        {detailError && (
-          <div className="geh-catalog-notice geh-catalog-notice--error" role="alert">
-            <p>Impossible de charger ce produit pour le moment.</p>
-            <div className="geh-catalog-notice__actions">
-              <button type="button" onClick={() => setRetryToken((value) => value + 1)}>
-                Réessayer
-              </button>
-              <button type="button" onClick={handleBack}>Retour aux produits</button>
+      <>
+        <section className="geh-catalog" ref={rootRef} aria-label="Fiche produit">
+          {detailLoading && <div className="geh-catalog-detail-loading">Chargement du produit…</div>}
+          {detailError && (
+            <div className="geh-catalog-notice geh-catalog-notice--error" role="alert">
+              <p>Impossible de charger ce produit pour le moment.</p>
+              <div className="geh-catalog-notice__actions">
+                <button type="button" onClick={() => setRetryToken((value) => value + 1)}>
+                  Réessayer
+                </button>
+                <button type="button" onClick={handleBack}>Retour aux produits</button>
+              </div>
             </div>
-          </div>
-        )}
-        {detail && (
-          <ProductDetail
-            product={detail}
-            placeholderUrl={config.placeholderUrl}
-            onBack={handleBack}
-          />
-        )}
-      </section>
+          )}
+          {detail && (
+            <ProductDetail
+              product={detail}
+              placeholderUrl={config.placeholderUrl}
+              onBack={handleBack}
+            />
+          )}
+        </section>
+        <ProductAssistant
+          client={assistantClient}
+          placeholderUrl={config.placeholderUrl}
+          getProductHref={getProductHref}
+          onOpenProduct={handleOpenProduct}
+        />
+      </>
     );
   }
 
   return (
-    <section className="geh-catalog" ref={rootRef} aria-labelledby="geh-catalog-title">
-      <header className="geh-catalog-header">
-        <p className="geh-catalog-eyebrow">Nos produits</p>
-        <h1 id="geh-catalog-title">Catalogue produits</h1>
-        <p>Découvrez notre sélection et affinez les résultats par famille ou par marque.</p>
-      </header>
+    <>
+      <section className="geh-catalog geh-catalog--list" ref={rootRef} aria-label="Catalogue produits">
+        <FilterBar
+          searchInput={searchInput}
+          family={location.family}
+          brand={location.brand}
+          filters={filters}
+          filtersLoading={filtersLoading}
+          onSearchChange={(value) => {
+            setSearchInput(value);
+            debouncedSearch.schedule(value);
+          }}
+          onFamilyChange={(family) => updateListCriteria({ family })}
+          onBrandChange={(brand) => updateListCriteria({ brand })}
+          onReset={handleReset}
+        />
 
-      <FilterBar
-        searchInput={searchInput}
-        family={location.family}
-        brand={location.brand}
-        filters={filters}
-        filtersLoading={filtersLoading}
-        onSearchChange={(value) => {
-          setSearchInput(value);
-          debouncedSearch.schedule(value);
-        }}
-        onFamilyChange={(family) => updateListCriteria({ family })}
-        onBrandChange={(brand) => updateListCriteria({ brand })}
-        onReset={handleReset}
-      />
+        {filtersError && (
+          <p className="geh-catalog-filter-warning" role="status">
+            Les filtres sont temporairement indisponibles. La recherche reste utilisable.
+          </p>
+        )}
 
-      {filtersError && (
-        <p className="geh-catalog-filter-warning" role="status">
-          Les filtres sont temporairement indisponibles. La recherche reste utilisable.
-        </p>
-      )}
-
-      {loading && !result && <LoadingGrid />}
-      {error && (
-        <div className="geh-catalog-notice geh-catalog-notice--error" role="alert">
-          <p>Impossible de charger les produits pour le moment.</p>
-          <button type="button" onClick={() => setRetryToken((value) => value + 1)}>
-            Réessayer
-          </button>
-        </div>
-      )}
-
-      {!error && result && (
-        <>
-          <div className="geh-catalog-results-heading" aria-live="polite">
-            <p>
-              <strong>{result.pagination.totalItems}</strong>{' '}
-              {result.pagination.totalItems > 1 ? 'produits trouvés' : 'produit trouvé'}
-            </p>
-            {loading && <span>Actualisation…</span>}
+        {loading && !result && <LoadingGrid />}
+        {error && (
+          <div className="geh-catalog-notice geh-catalog-notice--error" role="alert">
+            <p>Impossible de charger les produits pour le moment.</p>
+            <button type="button" onClick={() => setRetryToken((value) => value + 1)}>
+              Réessayer
+            </button>
           </div>
+        )}
 
-          {result.items.length === 0 ? (
-            <div className="geh-catalog-notice geh-catalog-notice--empty">
-              <h2>Aucun produit ne correspond à votre recherche.</h2>
-              <p>Modifiez vos critères ou réinitialisez les filtres.</p>
-              <button type="button" onClick={handleReset}>Réinitialiser les filtres</button>
+        {!error && result && (
+          <>
+            <div className="geh-catalog-results-heading" aria-live="polite">
+              <p>
+                <strong>{result.pagination.totalItems}</strong>{' '}
+                {result.pagination.totalItems > 1 ? 'produits trouvés' : 'produit trouvé'}
+              </p>
+              {loading && <span>Actualisation…</span>}
             </div>
-          ) : (
-            <div className={`geh-catalog-grid${loading ? ' is-updating' : ''}`}>
-              {result.items.map((product) => (
-                <ProductCard
-                  key={product.id}
-                  product={product}
-                  placeholderUrl={config.placeholderUrl}
-                  onOpen={handleOpenProduct}
-                />
-              ))}
-            </div>
-          )}
 
-          <Pagination
-            page={result.pagination.page}
-            totalPages={result.pagination.totalPages}
-            onChange={handlePageChange}
-          />
-        </>
-      )}
-    </section>
+            {result.items.length === 0 ? (
+              <div className="geh-catalog-notice geh-catalog-notice--empty">
+                <h2>Aucun produit ne correspond à votre recherche.</h2>
+                <p>Modifiez vos critères ou réinitialisez les filtres.</p>
+                <button type="button" onClick={handleReset}>Réinitialiser les filtres</button>
+              </div>
+            ) : (
+              <div className={`geh-catalog-grid${loading ? ' is-updating' : ''}`}>
+                {result.items.map((product) => (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    placeholderUrl={config.placeholderUrl}
+                    href={getProductHref(product)}
+                    onOpen={handleOpenProduct}
+                  />
+                ))}
+              </div>
+            )}
+
+            <Pagination
+              page={result.pagination.page}
+              totalPages={result.pagination.totalPages}
+              onChange={handlePageChange}
+            />
+          </>
+        )}
+      </section>
+      <ProductAssistant
+        client={assistantClient}
+        placeholderUrl={config.placeholderUrl}
+        getProductHref={getProductHref}
+        onOpenProduct={handleOpenProduct}
+      />
+    </>
   );
 }

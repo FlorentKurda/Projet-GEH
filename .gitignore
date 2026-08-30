@@ -38,3 +38,6 @@ Desktop.ini
 *.log
 *.tmp
 *.temp
+
+# Archive installable générée depuis les sources du plugin
+wordpress/product-catalog-sync.zip

@@ -23,21 +23,28 @@ final class Catalog_Shortcode {
 	public static function register() {
 		add_shortcode( self::SHORTCODE, array( self::class, 'render' ) );
 		add_action( 'wp_enqueue_scripts', array( self::class, 'enqueue_when_needed' ) );
+		add_filter( 'body_class', array( self::class, 'add_catalog_body_class' ) );
 	}
 
 	/** @return void */
 	public static function enqueue_when_needed() {
-		global $post;
-
-		if (
-			! is_singular() ||
-			! $post instanceof \WP_Post ||
-			! has_shortcode( $post->post_content, self::SHORTCODE )
-		) {
+		if ( ! self::is_catalog_page() ) {
 			return;
 		}
 
 		self::enqueue_assets();
+	}
+
+	/**
+	 * @param string[] $classes Existing body classes.
+	 * @return string[]
+	 */
+	public static function add_catalog_body_class( $classes ) {
+		if ( self::is_catalog_page() ) {
+			$classes[] = 'product-catalog-sync-page';
+		}
+
+		return $classes;
 	}
 
 	/** @return string */
@@ -72,6 +79,13 @@ final class Catalog_Shortcode {
 			return;
 		}
 
+		wp_add_inline_style(
+			self::STYLE_HANDLE,
+			'body.product-catalog-sync-page .wp-block-post-title,' .
+			'body.product-catalog-sync-page h1.entry-title,' .
+			'body.product-catalog-sync-page h1.page-title{display:none!important;}'
+		);
+
 		$config = array(
 			'restBaseUrl'   => untrailingslashit( rest_url( 'catalog/v1' ) ),
 			'placeholderUrl' => plugins_url(
@@ -93,5 +107,14 @@ final class Catalog_Shortcode {
 		}
 
 		self::$configured = true;
+	}
+
+	/** @return bool */
+	private static function is_catalog_page() {
+		global $post;
+
+		return is_singular()
+			&& $post instanceof \WP_Post
+			&& has_shortcode( $post->post_content, self::SHORTCODE );
 	}
 }

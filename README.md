@@ -327,6 +327,14 @@ npm run build
 
 `npm run dev` démarre le serveur de développement Vite et relaie localement `/wp-json` et le placeholder vers WordPress sur `http://localhost:8080`. WordPress utilise toujours les assets générés par `npm run build`; aucun serveur Node n’est nécessaire en production.
 
+### Archive installable du plugin
+
+Le ZIP WordPress est un artefact généré et n’est pas versionné. Après le build frontend, reconstruisez-le depuis la racine avec :
+
+```powershell
+Compress-Archive -Path .\wordpress\product-catalog-sync -DestinationPath .\wordpress\product-catalog-sync.zip -Force
+```
+
 ## Build, tests et lint
 
 ```powershell

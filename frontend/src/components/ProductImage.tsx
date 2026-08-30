@@ -4,7 +4,7 @@ interface ProductImageProps {
   imageUrl: string | null;
   placeholderUrl: string;
   alt: string;
-  variant: 'card' | 'detail';
+  variant: 'card' | 'detail' | 'assistant';
 }
 
 export function ProductImage({
@@ -23,7 +23,7 @@ export function ProductImage({
       <img
         src={source}
         alt={alt}
-        loading={variant === 'card' ? 'lazy' : 'eager'}
+        loading={variant === 'detail' ? 'eager' : 'lazy'}
         onError={() => {
           if (source !== placeholderUrl) setSource(placeholderUrl);
         }}
