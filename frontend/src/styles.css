@@ -25,6 +25,18 @@
   width: 100% !important;
 }
 
+.geh-catalog-demo-banner {
+  background: var(--catalog-surface-soft);
+  border: 1px solid var(--catalog-border);
+  border-radius: 999px;
+  color: var(--catalog-muted);
+  display: table;
+  font-size: 0.78rem;
+  font-weight: 700;
+  margin: 0.75rem 0.25rem 1rem;
+  padding: 0.35rem 0.7rem;
+}
+
 .geh-catalog {
   box-sizing: border-box;
   color: var(--catalog-text);

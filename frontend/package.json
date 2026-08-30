@@ -5,8 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:demo": "vite --mode demo",
+    "preview:demo": "vite preview --mode demo",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build",
+    "build:demo": "tsc --noEmit && vite build --mode demo",
     "test": "vitest run"
   },
   "dependencies": {

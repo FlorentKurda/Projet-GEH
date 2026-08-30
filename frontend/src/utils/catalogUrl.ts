@@ -6,6 +6,12 @@ export interface CatalogLocationState {
   productId: number | null;
 }
 
+export interface CatalogUrlLocation {
+  pathname: string;
+  search: string;
+  hash: string;
+}
+
 const catalogKeys = ['search', 'family', 'brand', 'page', 'product'] as const;
 
 export const defaultCatalogLocation: CatalogLocationState = {
@@ -47,12 +53,19 @@ export function buildCatalogSearch(
   return value ? `?${value}` : '';
 }
 
+export function buildCatalogHref(
+  state: CatalogLocationState,
+  location: CatalogUrlLocation = window.location,
+): string {
+  const search = buildCatalogSearch(state, location.search);
+  return `${location.pathname}${search}${location.hash}`;
+}
+
 export function writeCatalogLocation(
   state: CatalogLocationState,
   mode: 'push' | 'replace',
 ): void {
-  const search = buildCatalogSearch(state, window.location.search);
-  const url = `${window.location.pathname}${search}${window.location.hash}`;
+  const url = buildCatalogHref(state);
   const method = mode === 'push' ? 'pushState' : 'replaceState';
   window.history[method](null, '', url);
 }

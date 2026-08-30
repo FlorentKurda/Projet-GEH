@@ -47,6 +47,11 @@ export interface CatalogRuntimeConfig {
   perPage: number;
 }
 
+export type CatalogDisplayConfig = Pick<
+  CatalogRuntimeConfig,
+  'placeholderUrl' | 'perPage'
+>;
+
 declare global {
   interface Window {
     GEH_CATALOG_CONFIG?: CatalogRuntimeConfig;

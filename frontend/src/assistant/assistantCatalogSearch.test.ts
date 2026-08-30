@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { CatalogApi } from '../api/catalogApi';
+import type { CatalogClient } from '../api/catalogClient';
 import type { Product } from '../types/catalog';
 import {
   ASSISTANT_CANDIDATE_LIMIT_PER_QUERY,
@@ -34,7 +34,7 @@ describe('assistant catalog search', () => {
       getProducts,
       getProduct: vi.fn(),
       getFilters: vi.fn(),
-    } as unknown as CatalogApi;
+    } as unknown as CatalogClient;
 
     await expect(
       createAssistantCatalogSearch(api)(['perceuse', 'outillage', 'perceuse']),
@@ -59,7 +59,7 @@ describe('assistant catalog search', () => {
       getProducts,
       getProduct: vi.fn(),
       getFilters: vi.fn(),
-    } as unknown as CatalogApi;
+    } as unknown as CatalogClient;
 
     await expect(
       createAssistantCatalogSearch(api)([' ', 'd', 'ab', "'", '---']),

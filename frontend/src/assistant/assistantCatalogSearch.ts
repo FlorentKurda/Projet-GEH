@@ -1,4 +1,4 @@
-import type { CatalogApi } from '../api/catalogApi';
+import type { CatalogClient } from '../api/catalogClient';
 import type { AssistantCatalogSearch } from './types';
 
 export const ASSISTANT_CANDIDATE_LIMIT_PER_QUERY = 12;
@@ -7,7 +7,7 @@ export const ASSISTANT_MAX_CANDIDATES = 48;
 const PUBLIC_API_SEARCH_LIMIT = 100;
 const MIN_PUBLIC_API_SEARCH_LENGTH = 3;
 
-export function createAssistantCatalogSearch(api: CatalogApi): AssistantCatalogSearch {
+export function createAssistantCatalogSearch(api: CatalogClient): AssistantCatalogSearch {
   return async (queries, signal) => {
     const searches = [
       ...new Set(

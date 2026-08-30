@@ -4,6 +4,7 @@ import type {
   ProductListResponse,
   ProductQuery,
 } from '../types/catalog';
+import type { CatalogClient } from './catalogClient';
 
 export class CatalogApiError extends Error {
   constructor(
@@ -26,7 +27,7 @@ export function buildProductQuery(query: ProductQuery): string {
   return parameters.toString();
 }
 
-export function createCatalogApi(restBaseUrl: string) {
+export function createCatalogApi(restBaseUrl: string): CatalogClient {
   const baseUrl = restBaseUrl.replace(/\/$/, '');
 
   async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
@@ -58,5 +59,3 @@ export function createCatalogApi(restBaseUrl: string) {
     },
   };
 }
-
-export type CatalogApi = ReturnType<typeof createCatalogApi>;

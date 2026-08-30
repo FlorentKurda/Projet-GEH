@@ -3,17 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Catalogue produits — développement</title>
+    <meta
+      name="description"
+      content="Démonstration statique du catalogue de produits fictifs du Projet GEH."
+    />
+    <title>Catalogue produits — Projet GEH</title>
   </head>
   <body>
     <div id="product-catalog-root" class="geh-catalog-root"></div>
-    <script>
-      window.GEH_CATALOG_CONFIG = {
-        restBaseUrl: '/wp-json/catalog/v1',
-        placeholderUrl: '/wp-content/plugins/product-catalog-sync/assets/images/product-placeholder.svg',
-        perPage: 24,
-      };
-    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

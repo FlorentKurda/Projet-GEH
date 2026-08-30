@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCatalogSearch, parseCatalogSearch } from './catalogUrl';
+import { buildCatalogHref, buildCatalogSearch, parseCatalogSearch } from './catalogUrl';
 
 describe('catalog URL state', () => {
   it('parses valid criteria and rejects invalid page identifiers', () => {
@@ -31,5 +31,15 @@ describe('catalog URL state', () => {
   it('omits empty criteria and the first page', () => {
     expect(buildCatalogSearch({ search: '', family: '', brand: '', page: 1, productId: null }))
       .toBe('');
+  });
+
+  it('keeps GitHub Pages navigation on the repository base path', () => {
+    const href = buildCatalogHref(
+      { search: '', family: '', brand: '', page: 1, productId: 51 },
+      { pathname: '/Projet-GEH/', search: '', hash: '' },
+    );
+
+    expect(href).toBe('/Projet-GEH/?product=51');
+    expect(parseCatalogSearch(new URL(href, 'https://example.test').search).productId).toBe(51);
   });
 });

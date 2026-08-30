@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createCatalogApi } from './api/catalogApi';
+import type { CatalogClient } from './api/catalogClient';
 import { createAssistantCatalogSearch } from './assistant/assistantCatalogSearch';
 import { createAssistantClient } from './assistant/assistantClient';
 import { createDemoAssistantEngine } from './assistant/demoAssistantEngine';
@@ -12,12 +12,12 @@ import { ProductAssistant } from './components/assistant/ProductAssistant';
 import { useDebouncedCallback } from './hooks/useDebouncedCallback';
 import type {
   CatalogFiltersResponse,
-  CatalogRuntimeConfig,
+  CatalogDisplayConfig,
   Product,
   ProductListResponse,
 } from './types/catalog';
 import {
-  buildCatalogSearch,
+  buildCatalogHref,
   parseCatalogSearch,
   writeCatalogLocation,
   type CatalogLocationState,
@@ -26,14 +26,15 @@ import {
 const emptyFilters: CatalogFiltersResponse = { families: [], brands: [] };
 
 interface AppProps {
-  config: CatalogRuntimeConfig;
+  config: CatalogDisplayConfig;
+  client: CatalogClient;
+  demo?: boolean;
 }
 
-export function App({ config }: AppProps) {
-  const api = useMemo(() => createCatalogApi(config.restBaseUrl), [config.restBaseUrl]);
+export function App({ config, client, demo = false }: AppProps) {
   const assistantClient = useMemo(
-    () => createAssistantClient(createDemoAssistantEngine(createAssistantCatalogSearch(api))),
-    [api],
+    () => createAssistantClient(createDemoAssistantEngine(createAssistantCatalogSearch(client))),
+    [client],
   );
   const rootRef = useRef<HTMLElement>(null);
   const openedFromListRef = useRef(false);
@@ -69,7 +70,7 @@ export function App({ config }: AppProps) {
     const controller = new AbortController();
     setFiltersLoading(true);
     setFiltersError(false);
-    api
+    client
       .getFilters(controller.signal)
       .then(setFilters)
       .catch((requestError: unknown) => {
@@ -81,13 +82,13 @@ export function App({ config }: AppProps) {
         if (!controller.signal.aborted) setFiltersLoading(false);
       });
     return () => controller.abort();
-  }, [api, retryToken]);
+  }, [client, retryToken]);
 
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
     setError(false);
-    api
+    client
       .getProducts(
         {
           page: location.page,
@@ -119,7 +120,7 @@ export function App({ config }: AppProps) {
       });
     return () => controller.abort();
   }, [
-    api,
+    client,
     config.perPage,
     location.page,
     location.search,
@@ -140,7 +141,7 @@ export function App({ config }: AppProps) {
     setDetail(null);
     setDetailError(false);
     setDetailLoading(true);
-    api
+    client
       .getProduct(location.productId, controller.signal)
       .then(setDetail)
       .catch((requestError: unknown) => {
@@ -152,7 +153,7 @@ export function App({ config }: AppProps) {
         if (!controller.signal.aborted) setDetailLoading(false);
       });
     return () => controller.abort();
-  }, [api, location.productId, retryToken]);
+  }, [client, location.productId, retryToken]);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -204,11 +205,10 @@ export function App({ config }: AppProps) {
   };
 
   const getProductHref = (product: Product) => {
-    const search = buildCatalogSearch(
+    return buildCatalogHref(
       { ...location, productId: product.id },
-      window.location.search,
+      window.location,
     );
-    return `${window.location.pathname}${search}${window.location.hash}`;
   };
 
   const handleBack = () => {
@@ -233,6 +233,7 @@ export function App({ config }: AppProps) {
   if (location.productId !== null) {
     return (
       <>
+        {demo && <DemoBanner />}
         <section className="geh-catalog" ref={rootRef} aria-label="Fiche produit">
           {detailLoading && <div className="geh-catalog-detail-loading">Chargement du produit…</div>}
           {detailError && (
@@ -266,6 +267,7 @@ export function App({ config }: AppProps) {
 
   return (
     <>
+      {demo && <DemoBanner />}
       <section className="geh-catalog geh-catalog--list" ref={rootRef} aria-label="Catalogue produits">
         <FilterBar
           searchInput={searchInput}
@@ -343,5 +345,13 @@ export function App({ config }: AppProps) {
         onOpenProduct={handleOpenProduct}
       />
     </>
+  );
+}
+
+function DemoBanner() {
+  return (
+    <p className="geh-catalog-demo-banner" role="status">
+      Démonstration — données fictives
+    </p>
   );
 }

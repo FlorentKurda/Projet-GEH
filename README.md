@@ -327,6 +327,33 @@ npm run build
 
 `npm run dev` démarre le serveur de développement Vite et relaie localement `/wp-json` et le placeholder vers WordPress sur `http://localhost:8080`. WordPress utilise toujours les assets générés par `npm run build`; aucun serveur Node n’est nécessaire en production.
 
+### Démo statique GitHub Pages
+
+La démo réutilise la même application React avec un autre `CatalogClient` : le mode WordPress appelle l’API REST publique, tandis que le mode `demo` charge un fichier JSON statique. Aucun WordPress, PHP, Worker ou serveur de données n’est requis par la démo.
+
+Pour lancer la démo localement depuis la racine :
+
+```powershell
+Set-Location .\frontend
+npm install
+npm run dev:demo
+```
+
+Vite sert alors la page sous <http://localhost:5173/Projet-GEH/>. Le routage conserve les critères et les fiches dans la query string, par exemple `/Projet-GEH/?product=51`, afin qu’un refresh reste compatible avec GitHub Pages.
+
+Pour construire puis prévisualiser la version statique :
+
+```powershell
+npm run build:demo
+npm run preview:demo
+```
+
+Le build est écrit dans `frontend/dist-demo/` avec la base Vite `/Projet-GEH/`. Il transforme automatiquement `fixtures/products.json` en `catalog.json`, ajoute les identifiants de démonstration et copie le placeholder local. Ne modifiez pas le JSON généré : modifiez `fixtures/products.json`, puis reconstruisez la démo.
+
+Le workflow `.github/workflows/deploy-pages.yml` teste et construit la démo lors d’un push sur `main` ou d’un lancement manuel, puis publie `frontend/dist-demo/` avec les actions GitHub Pages officielles. Dans les paramètres Pages du dépôt, la source de publication doit être **GitHub Actions**.
+
+Le build WordPress reste inchangé : `npm run build` produit toujours `catalog.js` et `catalog.css` dans le plugin et utilise à l’exécution la configuration REST injectée par WordPress.
+
 ### Archive installable du plugin
 
 Le ZIP WordPress est un artefact généré et n’est pas versionné. Après le build frontend, reconstruisez-le depuis la racine avec :
