@@ -1,7 +1,9 @@
 ﻿[CmdletBinding()]
 param(
     [string]$EnvFile,
-    [string]$WorkerEnvFile
+    [string]$WorkerEnvFile,
+    [ValidatePattern('^[a-z0-9][a-z0-9_-]*$')]
+    [string]$ComposeProjectName
 )
 
 Set-StrictMode -Version Latest
@@ -112,6 +114,23 @@ function Invoke-WpCli {
     return $output
 }
 
+function Test-WpCli {
+    param([Parameter(Mandatory)][string[]]$WpArguments)
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        # Docker Compose écrit sa progression sur stderr même en cas de succès.
+        $ErrorActionPreference = 'Continue'
+        & docker @script:composePrefix run --rm --no-deps wpcli @WpArguments *> $null
+        $succeeded = $LASTEXITCODE -eq 0
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    return $succeeded
+}
+
 try {
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
         throw 'Docker est introuvable. Installez Docker Desktop et vérifiez que docker.exe est dans PATH.'
@@ -154,7 +173,11 @@ try {
         $null = Get-RequiredSetting -Settings $settings -Name $variableName
     }
 
-    $script:composePrefix = @('compose', '--env-file', $EnvFile, '-f', $composeFile)
+    $script:composePrefix = @('compose')
+    if (-not [string]::IsNullOrWhiteSpace($ComposeProjectName)) {
+        $script:composePrefix += @('--project-name', $ComposeProjectName)
+    }
+    $script:composePrefix += @('--env-file', $EnvFile, '-f', $composeFile)
 
     Write-Host 'Démarrage de MariaDB et WordPress…'
     & docker @composePrefix up -d db wordpress
@@ -165,8 +188,7 @@ try {
     Wait-DockerServiceHealthy -Service 'db'
     Wait-DockerServiceHealthy -Service 'wordpress'
 
-    & docker @composePrefix run --rm --no-deps wpcli core is-installed *> $null
-    $wordpressInstalled = $LASTEXITCODE -eq 0
+    $wordpressInstalled = Test-WpCli -WpArguments @('core', 'is-installed')
 
     if (-not $wordpressInstalled) {
         Write-Host 'Installation de WordPress…'
@@ -188,8 +210,10 @@ try {
     Write-Host 'Activation du plugin Product Catalog Sync…'
     $null = Invoke-WpCli -WpArguments @('plugin', 'activate', 'product-catalog-sync')
 
-    & docker @composePrefix run --rm --no-deps wpcli user get $syncUser --field=ID *> $null
-    $syncUserExists = $LASTEXITCODE -eq 0
+    Write-Host 'Configuration des permaliens pour les routes REST…'
+    $null = Invoke-WpCli -WpArguments @('rewrite', 'structure', '/%postname%/', '--hard')
+
+    $syncUserExists = Test-WpCli -WpArguments @('user', 'get', $syncUser, '--field=ID')
 
     if (-not $syncUserExists) {
         Write-Host "Création de l’utilisateur technique '$syncUser'…"
@@ -220,7 +244,7 @@ try {
     $applicationPasswords = @()
     $applicationPasswordListJson = ($applicationPasswordListOutput -join [Environment]::NewLine).Trim()
     if (-not [string]::IsNullOrWhiteSpace($applicationPasswordListJson)) {
-        $applicationPasswords = @(ConvertFrom-Json -InputObject $applicationPasswordListJson)
+        $applicationPasswords = ConvertFrom-Json -InputObject $applicationPasswordListJson
     }
     $matchingApplicationPasswords = @($applicationPasswords | Where-Object { $_.name -eq $applicationName })
 

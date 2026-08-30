@@ -40,5 +40,9 @@ Desktop.ini
 *.tmp
 *.temp
 
+# Fixtures et résultats locaux de tests de charge
+fixtures/load/
+artifacts/performance/
+
 # Archive installable générée depuis les sources du plugin
 wordpress/product-catalog-sync.zip

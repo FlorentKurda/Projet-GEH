@@ -428,7 +428,13 @@ final class Catalog_Repository {
 	 */
 	public function get_active_products( $page, $per_page, $search = '', $family = '', $brand = '' ) {
 		$table                    = $this->products_table();
-		$filters                  = $this->build_public_product_filters( $search, $family, $brand );
+		$exact_reference          = '' !== $search && $this->has_active_exact_reference( $search );
+		$filters                  = $this->build_public_product_filters(
+			$search,
+			$family,
+			$brand,
+			$exact_reference
+		);
 		$where_sql                = implode( ' AND ', $filters['clauses'] );
 		$count_sql                = $this->wpdb->prepare(
 			"SELECT COUNT(*) FROM {$table} WHERE {$where_sql}",
@@ -530,14 +536,19 @@ final class Catalog_Repository {
 	}
 
 	/** @return array */
-	private function build_public_product_filters( $search, $family, $brand ) {
+	private function build_public_product_filters( $search, $family, $brand, $exact_reference = false ) {
 		$clauses    = array( 'is_active = %d' );
 		$parameters = array( 1 );
 
 		if ( '' !== $search ) {
-			$like       = '%' . $this->wpdb->esc_like( $search ) . '%';
-			$clauses[]  = '(reference LIKE %s OR name LIKE %s OR brand LIKE %s OR family_label LIKE %s)';
-			$parameters = array_merge( $parameters, array( $like, $like, $like, $like ) );
+			if ( $exact_reference ) {
+				$clauses[]    = 'reference = %s';
+				$parameters[] = $search;
+			} else {
+				$like       = '%' . $this->wpdb->esc_like( $search ) . '%';
+				$clauses[]  = '(reference LIKE %s OR name LIKE %s OR brand LIKE %s OR family_label LIKE %s)';
+				$parameters = array_merge( $parameters, array( $like, $like, $like, $like ) );
+			}
 		}
 		if ( '' !== $family ) {
 			$clauses[]    = 'family_code = %s';
@@ -549,6 +560,20 @@ final class Catalog_Repository {
 		}
 
 		return array( 'clauses' => $clauses, 'parameters' => $parameters );
+	}
+
+	/** @return bool */
+	private function has_active_exact_reference( $reference ) {
+		$table = $this->products_table();
+		$sql   = $this->wpdb->prepare(
+			"SELECT 1 FROM {$table} WHERE reference = %s AND is_active = %d LIMIT 1",
+			$reference,
+			1
+		);
+		$exists = $this->wpdb->get_var( $sql );
+		$this->throw_on_last_error( 'Unable to inspect an exact catalog reference.' );
+
+		return null !== $exists;
 	}
 
 	/** @return array */

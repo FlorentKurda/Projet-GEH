@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Product Catalog Sync
  * Description: Synchronise un catalogue de produits vers des tables WordPress dédiées et expose une API publique paginée.
- * Version:     0.3.0
+ * Version:     0.3.1
  * Requires at least: 6.5
  * Requires PHP: 7.4
  * Author:      Product Catalog Sync
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'PRODUCT_CATALOG_SYNC_VERSION', '0.3.0' );
+define( 'PRODUCT_CATALOG_SYNC_VERSION', '0.3.1' );
 define( 'PRODUCT_CATALOG_SYNC_FILE', __FILE__ );
 define( 'PRODUCT_CATALOG_SYNC_DIR', plugin_dir_path( __FILE__ ) );
 

@@ -69,6 +69,8 @@ final class Activator {
 			UNIQUE KEY source_id (source_id),
 			KEY reference (reference),
 			KEY active_name (is_active,name(191)),
+			KEY active_family (is_active,family_code,family_label),
+			KEY active_brand (is_active,brand),
 			KEY last_seen_run (last_seen_run_uuid)
 		) ENGINE=InnoDB {$charset_collate};";
 
