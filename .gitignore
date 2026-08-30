@@ -37,12 +37,13 @@ Desktop.ini
 
 # Journaux et fichiers temporaires
 *.log
+logs/
 *.tmp
 *.temp
 
 # Fixtures et résultats locaux de tests de charge
 fixtures/load/
-artifacts/performance/
+artifacts/
 
 # Archive installable générée depuis les sources du plugin
 wordpress/product-catalog-sync.zip

@@ -1,10 +1,12 @@
 using Catalog.Sync.Worker.Abstractions;
 using Catalog.Sync.Worker.Configuration;
 using Catalog.Sync.Worker.Hosting;
+using Catalog.Sync.Worker.Logging;
 using Catalog.Sync.Worker.Products;
 using Catalog.Sync.Worker.Synchronization;
 using Catalog.Sync.Worker.WordPress;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Catalog.Sync.Worker.DependencyInjection;
@@ -17,15 +19,16 @@ public static class ServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        services.AddSingleton<IValidateOptions<SyncOptions>, SyncOptionsValidator>();
         services
             .AddOptions<SyncOptions>()
             .BindConfiguration(SyncOptions.SectionName)
-            .Validate(
-                options => options.IntervalMinutes is >= 1 and <= 1_440,
-                "Sync:IntervalMinutes doit être compris entre 1 et 1440.")
-            .Validate(
-                options => options.BatchSize is >= 1 and <= 500,
-                "Sync:BatchSize doit être compris entre 1 et 500.")
+            .ValidateOnStart();
+
+        services.AddSingleton<IValidateOptions<FileLoggingOptions>, FileLoggingOptionsValidator>();
+        services
+            .AddOptions<FileLoggingOptions>()
+            .BindConfiguration(FileLoggingOptions.SectionName)
             .ValidateOnStart();
 
         services
@@ -60,6 +63,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICatalogSynchronizationService, CatalogSynchronizationService>();
         services.AddSingleton<IRunOnceApplication, RunOnceApplication>();
         services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<ISynchronizationScheduler, SynchronizationScheduler>();
+        services.AddSingleton<ILoggerProvider, DailyFileLoggerProvider>();
 
         if (continuousMode)
         {

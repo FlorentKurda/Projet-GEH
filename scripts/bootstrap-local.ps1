@@ -300,7 +300,11 @@ try {
         'WordPress__AllowInsecureHttpForLocalDevelopment=true',
         "ProductSource__JsonFilePath=$fixturePath",
         'Sync__IntervalMinutes=15',
-        'Sync__BatchSize=200'
+        'Sync__RunOnStartup=true',
+        'Sync__BatchSize=200',
+        'FileLogging__Enabled=true',
+        'FileLogging__DirectoryPath=logs',
+        'FileLogging__RetentionDays=30'
     )
     $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllLines($WorkerEnvFile, $workerConfigLines, $utf8WithoutBom)

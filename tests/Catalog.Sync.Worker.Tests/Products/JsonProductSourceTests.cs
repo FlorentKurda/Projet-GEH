@@ -29,6 +29,16 @@ public sealed class JsonProductSourceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetProductsAsync_ResolvesRelativePathFromApplicationDirectory()
+    {
+        var source = CreateSource(Path.Combine("Fixtures", "products.json"));
+
+        var products = await source.GetProductsAsync(CancellationToken.None);
+
+        Assert.Equal(60, products.Count);
+    }
+
+    [Fact]
     public async Task GetProductsAsync_ThrowsClearErrorWhenFileDoesNotExist()
     {
         var missingPath = Path.Combine(_temporaryDirectory, "missing-products.json");

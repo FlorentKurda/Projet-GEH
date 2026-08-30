@@ -199,6 +199,10 @@ Le plugin porte une version de schéma interne. Au premier chargement de la vers
 
 ## Exécuter le Worker
 
+### Service Windows
+
+Le Worker peut également fonctionner en service Windows permanent, tout en conservant les modes console et `--run-once`. La publication, la configuration, les droits, les scripts d'installation/désinstallation et le diagnostic sont détaillés dans [Worker en service Windows](docs/deployment/windows-service.md).
+
 Fixture par défaut, une seule fois :
 
 ```powershell
@@ -243,7 +247,11 @@ WordPress__RetryBaseDelayMilliseconds
 WordPress__AllowInsecureHttpForLocalDevelopment
 ProductSource__JsonFilePath
 Sync__IntervalMinutes
+Sync__RunOnStartup
 Sync__BatchSize
+FileLogging__Enabled
+FileLogging__DirectoryPath
+FileLogging__RetentionDays
 ```
 
 `WordPress__SyncEndpoint`, utilisé par le Lot 1, reste toléré dans un ancien fichier local mais n’est plus utilisé. Le Worker refuse HTTP hors d’une URL loopback explicitement autorisée et ne journalise jamais les secrets ou l’en-tête `Authorization`.

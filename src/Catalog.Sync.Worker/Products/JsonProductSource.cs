@@ -125,7 +125,10 @@ public sealed class JsonProductSource : IProductSource
 
         try
         {
-            return Path.GetFullPath(configuredPath.Trim());
+            var trimmedPath = configuredPath.Trim();
+            return Path.IsPathRooted(trimmedPath)
+                ? Path.GetFullPath(trimmedPath)
+                : Path.GetFullPath(trimmedPath, AppContext.BaseDirectory);
         }
         catch (Exception exception) when (
             exception is ArgumentException or NotSupportedException or PathTooLongException)

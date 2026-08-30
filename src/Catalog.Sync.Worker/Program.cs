@@ -1,7 +1,10 @@
 using Catalog.Sync.Worker.Abstractions;
+using Catalog.Sync.Worker.Configuration;
 using Catalog.Sync.Worker.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting.WindowsServices;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Catalog.Sync.Worker;
@@ -42,9 +45,14 @@ public static class Program
         try
         {
             var builder = Host.CreateApplicationBuilder(hostArguments);
+            builder.Services.AddWindowsService(options =>
+            {
+                options.ServiceName = "GEHProductCatalogSync";
+            });
             builder.Services.AddCatalogSynchronization(continuousMode: !runOnce);
 
             using var host = builder.Build();
+            LogStartupConfiguration(host.Services, builder.Environment, runOnce, dryRun);
 
             if (runOnce)
             {
@@ -74,5 +82,35 @@ public static class Program
                 $"Le Worker n'a pas pu démarrer ({exception.GetType().Name}).");
             return 1;
         }
+    }
+
+    private static void LogStartupConfiguration(
+        IServiceProvider services,
+        IHostEnvironment environment,
+        bool runOnce,
+        bool dryRun)
+    {
+        var syncOptions = services.GetRequiredService<IOptions<SyncOptions>>().Value;
+        var wordPressOptions = services.GetRequiredService<IOptions<WordPressOptions>>().Value;
+        var fileLoggingOptions = services.GetRequiredService<IOptions<FileLoggingOptions>>().Value;
+        var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("Catalog.Sync.Worker");
+        var executionMode = runOnce
+            ? dryRun ? "run-once dry-run" : "run-once"
+            : WindowsServiceHelpers.IsWindowsService() ? "service Windows" : "console continue";
+
+        logger.LogInformation(
+            "Démarrage Worker. Environnement={Environment}; Mode={ExecutionMode}; " +
+            "WordPressBaseUrl={WordPressBaseUrl}; ProductSource=JsonProductSource; " +
+            "IntervalMinutes={IntervalMinutes}; RunOnStartup={RunOnStartup}; " +
+            "FileLoggingEnabled={FileLoggingEnabled}; FileLoggingDirectory={FileLoggingDirectory}; " +
+            "FileLoggingRetentionDays={FileLoggingRetentionDays}.",
+            environment.EnvironmentName,
+            executionMode,
+            wordPressOptions.BaseUrl,
+            syncOptions.IntervalMinutes,
+            syncOptions.RunOnStartup,
+            fileLoggingOptions.Enabled,
+            fileLoggingOptions.DirectoryPath,
+            fileLoggingOptions.RetentionDays);
     }
 }
