@@ -1,6 +1,7 @@
 using Catalog.Sync.Worker.Abstractions;
 using Catalog.Sync.Worker.Configuration;
 using Catalog.Sync.Worker.DependencyInjection;
+using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Hosting.WindowsServices;
@@ -94,16 +95,19 @@ public static class Program
         var wordPressOptions = services.GetRequiredService<IOptions<WordPressOptions>>().Value;
         var fileLoggingOptions = services.GetRequiredService<IOptions<FileLoggingOptions>>().Value;
         var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("Catalog.Sync.Worker");
+        var workerVersion = GetWorkerVersion();
         var executionMode = runOnce
             ? dryRun ? "run-once dry-run" : "run-once"
             : WindowsServiceHelpers.IsWindowsService() ? "service Windows" : "console continue";
 
         logger.LogInformation(
-            "Démarrage Worker. Environnement={Environment}; Mode={ExecutionMode}; " +
+            "Démarrage Worker. Catalog.Sync.Worker version {WorkerVersion}; " +
+            "Environnement={Environment}; Mode={ExecutionMode}; " +
             "WordPressBaseUrl={WordPressBaseUrl}; ProductSource=JsonProductSource; " +
             "IntervalMinutes={IntervalMinutes}; RunOnStartup={RunOnStartup}; " +
             "FileLoggingEnabled={FileLoggingEnabled}; FileLoggingDirectory={FileLoggingDirectory}; " +
             "FileLoggingRetentionDays={FileLoggingRetentionDays}.",
+            workerVersion,
             environment.EnvironmentName,
             executionMode,
             wordPressOptions.BaseUrl,
@@ -112,5 +116,20 @@ public static class Program
             fileLoggingOptions.Enabled,
             fileLoggingOptions.DirectoryPath,
             fileLoggingOptions.RetentionDays);
+    }
+
+    private static string GetWorkerVersion()
+    {
+        var assembly = typeof(Program).Assembly;
+        var informationalVersion = assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion;
+
+        if (!string.IsNullOrWhiteSpace(informationalVersion))
+        {
+            return informationalVersion.Split('+', 2)[0];
+        }
+
+        return assembly.GetName().Version?.ToString(3) ?? "inconnue";
     }
 }

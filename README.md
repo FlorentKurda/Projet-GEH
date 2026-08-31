@@ -203,6 +203,10 @@ Le plugin porte une version de schéma interne. Au premier chargement de la vers
 
 Le Worker peut également fonctionner en service Windows permanent, tout en conservant les modes console et `--run-once`. La publication, la configuration, les droits, les scripts d'installation/désinstallation et le diagnostic sont détaillés dans [Worker en service Windows](docs/deployment/windows-service.md).
 
+La procédure versionnée de publication, mise à jour et rollback est décrite dans [Mise à jour et rollback du Worker](docs/deployment/worker-update.md).
+
+Le package Windows de production est autonome (`win-x64`, self-contained) : aucun runtime .NET n'est à installer sur le serveur cible.
+
 Fixture par défaut, une seule fois :
 
 ```powershell

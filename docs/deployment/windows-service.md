@@ -26,10 +26,12 @@ Le même exécutable est utilisable en console et comme service Windows. Le prog
 
 ## Prérequis
 
-- Windows Server moderne x64 pris en charge par .NET 10 ;
-- .NET 10 Runtime installé sur le serveur pour la publication framework-dependent retenue ;
+- Windows Server moderne x64 compatible avec le Worker ;
+- aucun runtime .NET, SDK, Visual Studio, Git, Node ou Docker requis sur le serveur pour le package de production autonome ;
 - PowerShell exécuté en administrateur uniquement pour installer ou désinstaller le service ;
-- accès HTTPS au WordPress cible depuis le compte de service.
+- compte de service disposant uniquement des droits locaux et réseau nécessaires ;
+- accès HTTPS sortant au WordPress cible depuis ce compte ;
+- accès réseau SQL Server à prévoir lorsque la source Sage sera définie, sans configuration Sage dans ce lot.
 
 ## Configuration
 
@@ -81,11 +83,11 @@ Depuis la racine du dépôt :
 dotnet publish .\src\Catalog.Sync.Worker\Catalog.Sync.Worker.csproj `
   -c Release `
   -r win-x64 `
-  --self-contained false `
+  --self-contained true `
   -o .\artifacts\worker\win-x64
 ```
 
-Cette publication framework-dependent reste compacte et impose l'installation du .NET 10 Runtime x64 sur le serveur. La sortie contient l'exécutable, les DLL, `appsettings.json` et la petite fixture de démonstration sous `fixtures/`. `artifacts/` n'est pas versionné.
+La commande recommandée reste `.\scripts\publish-worker.ps1`, qui applique ces valeurs par défaut et produit une sortie versionnée. Le package Windows de production est self-contained : il inclut le runtime .NET nécessaire et n'impose aucune installation .NET sur le serveur cible. La sortie contient l'exécutable, les DLL applicatives et runtime, `appsettings.json` et la petite fixture de démonstration sous `fixtures/`. `artifacts/` n'est pas versionné.
 
 Copier ensuite la sortie validée, avec des droits administrateur, vers :
 
@@ -132,9 +134,11 @@ Dans un PowerShell administrateur, après avoir copié la publication :
 ```powershell
 .\scripts\install-worker-service.ps1 `
   -PublishPath 'C:\Program Files\GEH\ProductCatalogSync' `
-  -EnvironmentFile '.\.env.worker.local' `
+  -EnvironmentFile '.\.env.worker.service.local' `
   -Start
 ```
+
+Cette commande suppose que la localisation PowerShell courante est la racine du dépôt. Les chemins relatifs fournis à `-PublishPath` ou `-EnvironmentFile` sont résolus depuis cette localisation, jamais depuis le dossier `scripts` ni depuis le répertoire courant implicite de .NET.
 
 Le script refuse un service déjà présent. `-Force` demande explicitement sa recréation. `-EnvironmentFile` accepte uniquement les sections de configuration connues (`WordPress__`, `ProductSource__`, `Sync__`, `FileLogging__`, futur `Sql__`) et ne journalise aucune valeur. Il configure le recovery SCM après crash : 60 secondes au premier échec, 300 au deuxième, puis 900 pour les suivants. Une erreur de synchronisation normale ne fait pas crasher le processus et attend le cycle suivant. Le script tente également d'enregistrer la source `Catalog.Sync.Worker` dans le journal Application ; un refus de cette opération ne bloque pas l'installation ni les journaux fichiers.
 
@@ -158,14 +162,7 @@ Le Worker journalise l'environnement, le mode, l'URL de base WordPress, le type 
 
 ## Mise à jour
 
-1. Publier et valider la nouvelle version dans `artifacts/`.
-2. Exécuter `Stop-Service GEHProductCatalogSync` en administrateur.
-3. Sauvegarder la configuration opérationnelle hors du dossier à remplacer.
-4. Remplacer les binaires dans `C:\Program Files\GEH\ProductCatalogSync`.
-5. Exécuter `Start-Service GEHProductCatalogSync`.
-6. Vérifier le statut, le journal quotidien et le dernier run WordPress.
-
-Aucun auto-updater n'est inclus.
+La publication versionnée, le package SHA-256, la sauvegarde, la mise à jour sûre et le rollback sont détaillés dans [Mise à jour et rollback du Worker](worker-update.md). Les scripts OPS 2 remplacent la procédure manuelle de copie ; ils ne constituent pas un auto-updater et restent déclenchés explicitement par un administrateur.
 
 ## Désinstallation
 

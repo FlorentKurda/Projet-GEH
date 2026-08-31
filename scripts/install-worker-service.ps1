@@ -17,6 +17,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'worker-deployment-common.ps1')
+
 if ($env:OS -ne 'Windows_NT') {
     throw 'Ce script doit etre execute sous Windows.'
 }
@@ -27,7 +29,7 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
     throw 'Ouvrez PowerShell avec Executer en tant qu administrateur.'
 }
 
-$resolvedPublishPath = [System.IO.Path]::GetFullPath($PublishPath)
+$resolvedPublishPath = Resolve-UserPath -Path $PublishPath
 $workerExecutable = Join-Path $resolvedPublishPath 'Catalog.Sync.Worker.exe'
 if (-not (Test-Path -LiteralPath $workerExecutable -PathType Leaf)) {
     throw "Executable introuvable : '$workerExecutable'. Publiez le Worker avant l installation."
@@ -48,7 +50,7 @@ function Invoke-ScCommand {
 function Read-ServiceEnvironmentFile {
     param([Parameter(Mandatory)][string]$Path)
 
-    $resolvedPath = [System.IO.Path]::GetFullPath($Path)
+    $resolvedPath = Resolve-UserPath -Path $Path
     if (-not (Test-Path -LiteralPath $resolvedPath -PathType Leaf)) {
         throw "Fichier d environnement introuvable : '$resolvedPath'."
     }
