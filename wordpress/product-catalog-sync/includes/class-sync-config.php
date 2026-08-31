@@ -16,6 +16,7 @@ final class Sync_Config {
 	public const DEFAULT_MAX_DEACTIVATION_PERCENTAGE     = 30.0;
 	public const DEFAULT_RUN_TIMEOUT_MINUTES             = 30;
 	public const DEFAULT_HISTORY_RETENTION_DAYS          = 90;
+	public const DEFAULT_SUPERVISION_STALE_AFTER_MINUTES = 45;
 	public const MAX_EXPECTED_PRODUCTS                   = 1000000;
 
 	/** @return int */
@@ -56,5 +57,15 @@ final class Sync_Config {
 		);
 
 		return max( 1, min( 3650, $value ) );
+	}
+
+	/** @return int */
+	public static function supervision_stale_after_minutes() {
+		$value = (int) apply_filters(
+			'product_catalog_sync_supervision_stale_after_minutes',
+			self::DEFAULT_SUPERVISION_STALE_AFTER_MINUTES
+		);
+
+		return max( 1, min( 10080, $value ) );
 	}
 }

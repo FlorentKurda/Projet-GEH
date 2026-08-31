@@ -15,12 +15,13 @@ final class Activator {
 	public const CAPABILITY = 'catalog_sync_write';
 	public const ROLE       = 'catalog_sync';
 	private const DB_OPTION = 'product_catalog_sync_db_version';
+	private const DB_VERSION = '0.3.1';
 
 	/** @return void */
 	public static function activate() {
 		self::create_tables();
 		self::create_role_and_capabilities();
-		update_option( self::DB_OPTION, PRODUCT_CATALOG_SYNC_VERSION );
+		update_option( self::DB_OPTION, self::DB_VERSION );
 	}
 
 	/**
@@ -30,13 +31,13 @@ final class Activator {
 	 * @return void
 	 */
 	public static function maybe_upgrade() {
-		if ( PRODUCT_CATALOG_SYNC_VERSION === get_option( self::DB_OPTION ) ) {
+		if ( self::DB_VERSION === get_option( self::DB_OPTION ) ) {
 			return;
 		}
 
 		self::create_tables();
 		self::create_role_and_capabilities();
-		update_option( self::DB_OPTION, PRODUCT_CATALOG_SYNC_VERSION );
+		update_option( self::DB_OPTION, self::DB_VERSION );
 	}
 
 	/** @return void */

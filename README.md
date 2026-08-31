@@ -295,6 +295,10 @@ curl.exe "http://localhost:8080/wp-json/catalog/v1/products?page=1&per_page=24"
 
 `filters` retourne les familles et marques distinctes des seuls produits actifs. Le détail utilise l’ID opaque de la ligne miroir, indépendant de Sage. Les produits `is_active = 0` ne sont retournés ni par la liste, ni par les facettes, ni par le détail. Une page hors limites répond HTTP 200 avec `items: []` et les totaux corrects ; un détail absent ou inactif répond HTTP 404.
 
+## Supervision WordPress
+
+Les administrateurs disposent d’une page de supervision en lecture seule sous **Administration → Catalogue produits**. Les métriques, statuts, règles de fraîcheur, détails des runs et commandes de diagnostic sont documentés dans [Supervision WordPress du catalogue](docs/operations/catalog-supervision.md).
+
 Les trois routes d’écriture privées exigent une Application Password valide et `catalog_sync_write`. Un appel anonyme reçoit 401 ou 403. Aucun CORS permissif n’est ajouté.
 
 ## Frontend catalogue
